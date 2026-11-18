@@ -55,6 +55,41 @@ pub fn all() -> Vec<Screen> {
     }
 }
 
+
+/// Nombres comerciales que Windows anuncia para cada salida activa.
+/// El identificador GDI sigue siendo la clave interna de configuración.
+pub fn friendly_names() -> Vec<(String, String)> {
+    unsafe {
+        let (mut np, mut nm) = (0u32, 0u32);
+        if GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &mut np, &mut nm) != ERROR_SUCCESS {
+            return Vec::new();
+        }
+        let mut paths = vec![DISPLAYCONFIG_PATH_INFO::default(); np as usize];
+        let mut modes = vec![DISPLAYCONFIG_MODE_INFO::default(); nm as usize];
+        if QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &mut np, paths.as_mut_ptr(), &mut nm, modes.as_mut_ptr(), None) != ERROR_SUCCESS {
+            return Vec::new();
+        }
+        paths.truncate(np as usize);
+        paths.iter().filter_map(|p| {
+            let mut source = DISPLAYCONFIG_SOURCE_DEVICE_NAME::default();
+            source.header = header(DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME, size_of_val(&source), p.sourceInfo.adapterId, p.sourceInfo.id);
+            let mut target = DISPLAYCONFIG_TARGET_DEVICE_NAME::default();
+            target.header = header(DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME, size_of_val(&target), p.targetInfo.adapterId, p.targetInfo.id);
+            if DisplayConfigGetDeviceInfo(&mut source.header) != 0 {
+                return None;
+            }
+            let id = wide(&source.viewGdiDeviceName);
+            if id.is_empty() { return None; }
+            let label = if DisplayConfigGetDeviceInfo(&mut target.header) == 0 {
+                wide(&target.monitorFriendlyDeviceName)
+            } else {
+                String::new()
+            };
+            Some((id, label))
+        }).collect()
+    }
+}
+
 /// Resolución del escritorio que eligió el usuario en Windows (la guardada, no la que puso un juego
 /// en pantalla completa). None si no se puede leer.
 pub fn desktop(name: &str) -> Option<(u32, u32)> {

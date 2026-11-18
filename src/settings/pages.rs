@@ -409,6 +409,32 @@ impl SettingsApp {
                 },
             );
             divider(ui);
+            row(ui, tr!("Pantalla", "Monitor", "Tela"), LABEL_W, |ui| {
+                egui::ComboBox::from_id_salt("recorddy-monitor-select")
+                    .selected_text(if self.cfg.monitor_name.is_empty() {
+                        tr!("Automático", "Automatic", "Automático").to_owned()
+                    } else {
+                        self.monitors.iter()
+                            .find(|(id, _)| id == &self.cfg.monitor_name)
+                            .map(|(_, label)| label.clone())
+                            .unwrap_or_else(|| self.cfg.monitor_name.clone())
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.cfg.monitor_name, String::new(), tr!("Automático", "Automatic", "Automático"));
+                        for (id, label) in &self.monitors {
+                            ui.selectable_value(&mut self.cfg.monitor_name, id.clone(), label);
+                        }
+                    });
+                if button(ui, tr!("Actualizar", "Refresh", "Atualizar"), Kind::Secondary).clicked() {
+                    self.monitors = crate::record::monitor_choices();
+                }
+            });
+            hint(ui, LABEL_W + 8.0, tr!(
+                "Automático sigue el monitor del juego o de la ventana activa. Una pantalla fija no cambia al mover las ventanas. Cambiar de monitor puede finalizar una grabación continua activa.",
+                "Automatic follows the game or active window. A fixed monitor ignores window focus. Switching monitors may end an active continuous recording.",
+                "Automático segue o monitor do jogo ou da janela ativa. Uma tela fixa não muda com o foco. A troca de monitor pode encerrar uma gravação contínua ativa."
+            ));
+            divider(ui);
             row(ui, tr!("Memoria", "Memory", "Memória"), LABEL_W, |ui| {
                 let ram = fmt_bytes(self.cfg.typical_ram_mb() as f64 * 1e6);
                 let txt = trf!("Unos {ram} de RAM mientras graba", "About {ram} of RAM while recording", "Cerca de {ram} de RAM enquanto grava");
