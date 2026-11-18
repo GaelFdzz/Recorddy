@@ -1,29 +1,38 @@
-# Recorddy
+# Recorddy — Open-Source Screen Recorder for Windows
 
-Grabadora de clips y grabación continua para Windows, basada en el proyecto libre [Clippy](https://github.com/santiremedi/clippy) de santiremedi.
+**Recorddy** is a Windows screen recorder built with Rust, designed for instant replay clips and long-form screen recording.
 
-**Recorddy es una versión modificada, independiente y no oficial. No está afiliada al autor de Clippy.** Cambia el nombre, los recursos visuales y añade funciones de grabación continua y selección de pantalla. No incluye actualización remota automática en la versión de trabajo.
+Capture gameplay, desktop activity and videos using GPU-accelerated H.264 encoding, without requiring a traditional installer.
 
-## Compilar
+## Features
 
-En Windows con Rust estable, MSVC y Windows SDK:
+- **Instant Replay:** Save the last seconds or minutes of gameplay.
+- **Continuous Recording:** Record full sessions and stop whenever you want.
+- **GPU-Accelerated Recording:** H.264 encoding using Windows Media Foundation and compatible hardware.
+- **Multi-Monitor Support:** Automatically follow the active screen or select a monitor manually.
+- **Audio Capture:** Capture desktop audio and supported microphone input.
+- **Recording Modes:** Choose between instant replay and continuous recording.
+- **Built-in Video Editor:** Review, trim and export recordings.
+- **Windows Native:** Built in Rust with native Windows APIs.
+
+## Características en español
+
+Recorddy es un grabador de pantalla de código abierto para Windows, desarrollado en Rust. Permite guardar clips instantáneos o grabar sesiones completas, utilizando codificación H.264 acelerada por hardware cuando está disponible.
+
+## Build from source
+
+Requires Rust, Cargo, and the Microsoft C++ build tools on Windows.
 
 ```powershell
-cargo check
 cargo build --release
-.\target\release\recorddy.exe
 ```
 
-## Datos de usuario
+The executable is generated at `target/release/recorddy.exe`.
 
-- Configuración y registros nuevos: `%APPDATA%\Recorddy`.
-- La primera vez se copia `config.json` desde `%APPDATA%\Clippy`, si existe y aún no hay configuración de Recorddy. No se elimina nada de la ubicación anterior.
-- Los videos existentes NO se mueven; el directorio de salida guardado en la configuración copiada continúa utilizándose hasta que lo cambies manualmente.
-- Si Clippy tenía inicio automático con Windows, desactívalo desde la versión anterior o desde las opciones de inicio de Windows; Recorddy utiliza una entrada separada.
-- Cierra Clippy antes de iniciar Recorddy para evitar que ambas aplicaciones intenten capturar los mismos recursos.
+## License and attribution
 
-## Licencia y atribución
+Recorddy is a modified fork of [Clippy by santiremedi](https://github.com/santiremedi/clippy).
 
-Este trabajo deriva de **Clippy**, © sus autores/contribuyentes originales. El código se distribuye bajo **GPL-3.0-or-later**; consulta [LICENSE](LICENSE) para el texto íntegro y [NOTICE.md](NOTICE.md) para los avisos sobre modificaciones. Si redistribuyes binarios, acompáñalos del código fuente correspondiente y los avisos/licencia exigibles.
+The project is distributed under **GPL-3.0-or-later**, retaining the original copyright notices and license obligations.
 
-El nombre y la identidad gráfica de Clippy no se usan para identificar esta versión modificada. Las referencias históricas a Clippy se conservan donde son necesarias para reconocer archivos y configuraciones anteriores y dar atribución.
+Recorddy is an independent modified version and is not an official Clippy release.
