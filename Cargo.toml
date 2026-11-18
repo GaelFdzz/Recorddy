@@ -1,6 +1,6 @@
 [package]
 name = "clippy"
-version = "0.4.1"
+version = "0.4.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "Clips instantáneos ultralivianos para Windows (captura y codificación 100% en GPU)"
@@ -18,7 +18,6 @@ windows-core = "0.58"
 version = "0.58"
 features = [
     "implement",
-    "Win32_Networking_WinHttp",
     "Win32_Devices_FunctionDiscovery",
     "Win32_Devices_Display",
     "Win32_UI_Shell_PropertiesSystem",

@@ -128,14 +128,6 @@ pub fn run(background: bool) {
         if first_run || !background {
             open_settings();
         }
-        // Versiones nuevas: una consulta como mucho por día, en segundo plano.
-        {
-            let h = hwnd.0 as isize;
-            update::watch(move || {
-                let _ = PostMessageW(HWND(h as *mut _), WM_UPDATE, WPARAM(0), LPARAM(0));
-            });
-        }
-
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
             let _ = TranslateMessage(&msg);

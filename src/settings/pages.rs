@@ -225,30 +225,12 @@ impl SettingsApp {
         section(ui, tr!("Acerca de", "About", "Sobre"), |ui| {
             row(ui, tr!("Versión", "Version", "Versão"), LABEL_W, |ui| {
                 ui.label(RichText::new(format!("Clippy {}", env!("CARGO_PKG_VERSION"))).color(TEXT));
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| match self.update.clone() {
-                    Some((v, _)) => {
-                        let busy = self.update_busy();
-                        let label = if busy {
-                            tr!("Actualizando…", "Updating…", "Atualizando…").to_string()
-                        } else {
-                            trf!("Actualizar a {v}", "Update to {v}", "Atualizar para {v}")
-                        };
-                        if ui.add_enabled_ui(!busy, |ui| button(ui, &label, Kind::Secondary)).inner.clicked() {
-                            self.start_update();
-                        }
-                    }
-                    None => {
-                        let label = if self.checking {
-                            tr!("Buscando…", "Checking…", "Verificando…")
-                        } else {
-                            tr!("Buscar actualizaciones", "Check for updates", "Buscar atualizações")
-                        };
-                        // Ancho fijo: al pasar a "Buscando…" no se achica ni se corre.
-                        let size = egui::vec2(190.0, 0.0);
-                        if ui.add_enabled_ui(!self.checking, |ui| button_sized(ui, label, Kind::Secondary, size)).inner.clicked() {
-                            self.start_check();
-                        }
-                    }
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.label(RichText::new(tr!(
+                        "Versión local · sin actualizaciones automáticas",
+                        "Local build · automatic updates disabled",
+                        "Versão local · atualizações automáticas desativadas"
+                    )).color(MUTED));
                 });
             });
             self.finish_check(ui.ctx());
