@@ -5,7 +5,8 @@ Ver `README.md` para el mapa del código y los modos del exe.
 
 ## Reglas
 
-- No sumes dependencias si Windows ya trae la API.
+- **Liviano ante todo.** El exe no puede crecer sin una razón fuerte: medí `target/release/clippy.exe`
+  antes y después de cada cambio. No sumes dependencias si Windows ya trae la API.
 - **Que se comporte como una app de verdad** (Medal, NVIDIA Instant Replay): nada hardcodeado
   para un juego, nada que el usuario tenga que configurar si se puede detectar.
 - **Textos de la interfaz en tres idiomas**: español rioplatense ("vos", "tocá", "apretá"), inglés y
@@ -19,8 +20,6 @@ Ver `README.md` para el mapa del código y los modos del exe.
 
 Todo cambio entra a `main` por PR; nunca se commitea directo en `main`.
 
-- **Primero el issue, después la PR.** Cada PR cierra su issue con `Closes #N`; si no existe, abrilo antes de
-  crear la rama (ver "Issues y PRs"). Solo las `chore/` de versión o CI van sin issue.
 - **Cada cosa nueva arranca de `main` al día y en un worktree propio**, nunca en el checkout principal:
 
   ```bash
@@ -95,6 +94,7 @@ y nada de código muerto.
 cargo clippy --features devtools -- -D warnings   # chequeo rápido, el mismo que corre el CI
 cargo build --profile fast --features devtools    # para probar: unos segundos por cambio
 target/fast/clippy.exe --test 8 <carpeta> game
+cargo build --release                             # una sola vez, al final, para medir el tamaño
 ```
 
 Compilá siempre en `target/` con estos perfiles: otra `--target-dir` recompila todo de cero.

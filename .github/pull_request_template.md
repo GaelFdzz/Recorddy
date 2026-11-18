@@ -9,7 +9,7 @@
 
 ## Por qué
 
-<!-- El problema que resuelve y el issue que cierra. Solo las chore/ de versión o CI van sin issue. -->
+<!-- El problema que resuelve. Si hay issue, "Closes #N". -->
 
 Closes #
 
@@ -19,6 +19,7 @@ Closes #
 
 - `cargo clippy --features devtools -- -D warnings`:
 - Prueba a mano (`--test`, `--settings`, `--editor`…):
+- Exe release: X → Y bytes
 
 ## Notas
 
