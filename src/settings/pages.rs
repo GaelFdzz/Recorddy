@@ -45,19 +45,38 @@ impl SettingsApp {
                     let (txt, col) = if error.is_some() {
                         (tr!("No puede grabar", "Can't record", "Não consegue gravar"), DANGER)
                     } else if self.cfg.enabled {
-                        (tr!("Grabando", "Recording", "Gravando"), TEXT)
+                        (if self.cfg.continuous_mode { "Grabación continua" } else { "Grabando clips" }, TEXT)
                     } else {
                         (tr!("En pausa", "Paused", "Pausado"), MUTED)
                     };
                     let (r, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
                     ui.painter().circle_filled(r.center(), 4.0, col);
                     ui.label(RichText::new(txt).family(bold()).color(col));
+                });
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Grabar clips").size(12.5).color(TEXT));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        toggle(ui, &mut self.cfg.enabled).on_hover_text(if self.cfg.enabled { tr!("Pausar", "Pause", "Pausar") } else { tr!("Reanudar", "Resume", "Retomar") });
+                        let mut active = self.cfg.enabled && !self.cfg.continuous_mode;
+                        if toggle(ui, &mut active).changed() {
+                            self.cfg.continuous_mode = false;
+                            self.cfg.enabled = active;
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Grabación continua").size(12.5).color(TEXT));
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let mut active = self.cfg.enabled && self.cfg.continuous_mode;
+                        if toggle(ui, &mut active).changed() {
+                            self.cfg.continuous_mode = true;
+                            self.cfg.enabled = active;
+                        }
                     });
                 });
                 let sub = if let Some(e) = error {
                     trf!("{e} Clippy vuelve a intentar solo.", "{e} Clippy keeps trying by itself.", "{e} O Clippy tenta de novo sozinho.")
+                } else if self.cfg.enabled && self.cfg.continuous_mode {
+                    "Grabación continua activa · utiliza el interruptor para detenerla".into()
                 } else if self.cfg.enabled {
                     let (key, secs) = (hotkey_name(self.cfg.hotkey_vk, self.cfg.hotkey_mods), fmt_secs(self.cfg.seconds));
                     trf!("{key} guarda los últimos {secs}", "{key} saves the last {secs}", "{key} salva os últimos {secs}")

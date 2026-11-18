@@ -438,6 +438,12 @@ fn session(
     let mut packets: VecDeque<Packet> = VecDeque::new();
     let mut out = Vec::new();
     let mut continuous: Option<ContinuousSession> = None;
+    if cfg.continuous_mode {
+        match ContinuousSession::new(cfg, notify) {
+            Ok(c) => continuous = Some(c),
+            Err(e) => notify(Event::ContinuousFailed(e.to_string())),
+        }
+    }
 
     loop {
         loop {
@@ -447,7 +453,7 @@ fn session(
                     return Ok(End::Stop);
                 },
                 Ok(Cmd::StartContinuous) => {
-                    if continuous.is_none() {
+                    if cfg.continuous_mode && continuous.is_none() {
                         match ContinuousSession::new(cfg, notify) {
                             Ok(c) => continuous = Some(c),
                             Err(e) => notify(Event::ContinuousFailed(e.to_string())),
@@ -457,13 +463,14 @@ fn session(
                 Ok(Cmd::StopContinuous) => {
                     if let Some(c) = continuous.take() { c.finish(); }
                 },
-                Ok(Cmd::Save) => {
+                Ok(Cmd::Save) if !cfg.continuous_mode => {
                     let now = now_100ns() - t0;
                     if save_clip(cfg, &packets, &enc, &au, now, frame_dur, notify) && cfg.sound_on_save {
                         sound::play_saved();
                         au.masks.push((now, now + sound::SAVED_LEN + SOUND_LATENCY));
                     }
                 }
+                Ok(Cmd::Save) => {},
                 Ok(Cmd::Update(c)) => {
                     *cfg = c;
                     au.sync(cfg, now_100ns() - t0);
@@ -471,7 +478,7 @@ fn session(
                 Err(TryRecvError::Empty) => break,
             }
         }
-        let keep = cfg.seconds as i64 * 10_000_000;
+        let keep = if cfg.continuous_mode { 3 * 10_000_000 } else { cfg.seconds as i64 * 10_000_000 };
 
         let now = now_100ns() - t0;
         if au.game.poll(now) {
@@ -513,7 +520,11 @@ fn session(
                 if let Some(c) = continuous.take() { c.finish(); }
             }
         }
-        packets.extend(out.drain(..));
+        if !cfg.continuous_mode {
+            packets.extend(out.drain(..));
+        } else {
+            out.clear();
+        }
         if !packets.is_empty() {
             *untested = None;
         }

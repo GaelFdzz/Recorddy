@@ -4,6 +4,7 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use windows::core::{w, HSTRING, PCWSTR};
 use windows::Win32::Foundation::*;
@@ -33,6 +34,7 @@ const ID_FOLDER: usize = 13;
 const ID_EXIT: usize = 14;
 const ID_EDITOR: usize = 15;
 const ID_MIC: usize = 16;
+const ID_CONTINUOUS: usize = 17;
 const NIN_BALLOONUSERCLICK: u32 = WM_USER + 5;
 
 static EVENTS: Mutex<VecDeque<Event>> = Mutex::new(VecDeque::new());
@@ -40,6 +42,14 @@ static EVENTS: Mutex<VecDeque<Event>> = Mutex::new(VecDeque::new());
 thread_local! {
     static APP: RefCell<Option<App>> = const { RefCell::new(None) };
     static TASKBAR_CREATED: RefCell<u32> = const { RefCell::new(0) };
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ContinuousStatus {
+    Idle,
+    Starting,
+    Recording,
+    Finishing,
 }
 
 struct App {
@@ -52,6 +62,8 @@ struct App {
     status: Status,
     /// Juego detectado por la grabadora (para el tooltip).
     game: Option<String>,
+    continuous: ContinuousStatus,
+    continuous_since: Option<Instant>,
 }
 
 /// `background`: arrancar sin abrir la ventana (inicio automático con Windows).
@@ -104,6 +116,8 @@ pub fn run(background: bool) {
             icon_off: icon::hicon(size, false),
             status: Status::default(),
             game: None,
+            continuous: ContinuousStatus::Idle,
+            continuous_since: None,
         };
         app.tray(NIM_ADD);
         status::save(&app.status);
@@ -155,14 +169,18 @@ fn notifier(hwnd: HWND) -> Notify {
 impl App {
     fn apply(&mut self, new: Config, startup: bool) {
         let restart = new.video_params() != self.cfg.video_params();
-        let keys = |c: &Config| (GlobalAction::ALL.map(|a| c.hotkey(a)), c.enabled);
+        let keys = |c: &Config| (GlobalAction::ALL.map(|a| c.hotkey(a)), c.enabled, c.continuous_mode);
         let hotkey_changed = keys(&new) != keys(&self.cfg);
         self.cfg = new;
         if restart || (self.cfg.enabled && self.rec.is_none()) {
+            // El reinicio de la captura finaliza cualquier MP4 largo en progreso.
+            self.continuous = ContinuousStatus::Idle;
+            self.continuous_since = None;
             self.rec = None; // detiene la grabadora anterior
             self.set_status(Status::default());
             self.game = None;
             if self.cfg.enabled {
+                if self.cfg.continuous_mode { self.continuous = ContinuousStatus::Starting; }
                 self.rec = Some(Recorder::start(self.cfg.clone(), notifier(self.hwnd)));
             }
         } else if let Some(r) = &self.rec {
@@ -202,7 +220,7 @@ impl App {
         for a in GlobalAction::ALL {
             let (vk, mods) = self.cfg.hotkey(a);
             // Guardar clip solo mientras graba; los demás, siempre.
-            if vk == 0 || (a == GlobalAction::SaveClip && !self.cfg.enabled) {
+            if vk == 0 || (a == GlobalAction::SaveClip && (!self.cfg.enabled || self.cfg.continuous_mode)) {
                 continue;
             }
             let ok = unsafe { RegisterHotKey(self.hwnd, a.id(), HOT_KEY_MODIFIERS(mods | MOD_NOREPEAT.0), vk).is_ok() };
@@ -216,6 +234,17 @@ impl App {
     fn tip(&self) -> String {
         if let Some(e) = &self.status.error {
             return trf!("Clippy · error: {e}", "Clippy · error: {e}", "Clippy · erro: {e}");
+        }
+        if self.cfg.continuous_mode && matches!(self.continuous, ContinuousStatus::Starting | ContinuousStatus::Recording | ContinuousStatus::Finishing) {
+            return match self.continuous {
+                ContinuousStatus::Starting => "Recorddy · iniciando grabación larga".into(),
+                ContinuousStatus::Recording => "Recorddy · grabación larga activa".into(),
+                ContinuousStatus::Finishing => "Recorddy · guardando grabación larga".into(),
+                ContinuousStatus::Idle => unreachable!(),
+            };
+        }
+        if self.cfg.enabled && self.cfg.continuous_mode {
+            return "Recorddy · grabación continua iniciando".into();
         }
         if self.cfg.enabled {
             let (key, secs) = (hotkey_name(self.cfg.hotkey_vk, self.cfg.hotkey_mods), fmt_secs(self.cfg.seconds));
@@ -260,17 +289,31 @@ impl App {
         }
     }
 
+    /// Los modos son mutuamente excluyentes; cambiar de modo cierra el grabador anterior.
+    fn select_mode(&mut self, continuous_mode: bool) {
+        if self.continuous == ContinuousStatus::Finishing { return; }
+        let mut c = self.cfg.clone();
+        let same_mode = c.continuous_mode == continuous_mode;
+        c.continuous_mode = continuous_mode;
+        c.enabled = if same_mode { !c.enabled } else { true };
+        let _ = config::save(&c);
+        self.apply(c, false);
+        if !continuous_mode && self.cfg.enabled { sound::play_resumed(); }
+        if !continuous_mode && !self.cfg.enabled { sound::play_paused(); }
+    }
+
+    fn toggle_continuous(&mut self) {
+        self.select_mode(true);
+    }
+
     fn save_clip(&self) {
-        if let Some(r) = &self.rec {
-            r.save();
+        if self.cfg.enabled && !self.cfg.continuous_mode {
+            if let Some(r) = &self.rec { r.save(); }
         }
     }
 
     fn toggle(&mut self) {
-        let mut c = self.cfg.clone();
-        c.enabled = !c.enabled;
-        let _ = config::save(&c);
-        self.apply(c, false);
+        self.select_mode(false);
     }
 
     /// Cambia el estado y, si es otro, lo deja escrito para la ventana principal.
@@ -292,9 +335,36 @@ impl App {
                 self.tray(NIM_MODIFY);
             }
             Event::Saved(_) => {} // el sonido lo reproduce la grabadora al instante
-            Event::ContinuousStarted(p) => self.balloon("Recorddy", &format!("Grabación continua iniciada: {}", p.display()), false),
-            Event::ContinuousSaved(p) => self.balloon("Recorddy", &format!("Grabación guardada: {}", p.display()), false),
-            Event::ContinuousFailed(e) => self.balloon("Error en grabación continua", &e, true),
+            Event::ContinuousStarted(p) => {
+                if self.cfg.enabled && self.cfg.continuous_mode && self.cfg.sound_on_save {
+                    sound::play_resumed();
+                }
+                if self.continuous == ContinuousStatus::Starting {
+                    self.continuous = ContinuousStatus::Recording;
+                    self.continuous_since = Some(Instant::now());
+                }
+                self.tray(NIM_MODIFY);
+                self.balloon("Recorddy", &format!("Grabación continua iniciada: {}", p.display()), false);
+            }
+            Event::ContinuousSaved(p) => {
+                if self.cfg.sound_on_save { sound::play_paused(); }
+                self.continuous = ContinuousStatus::Idle;
+                self.continuous_since = None;
+                self.tray(NIM_MODIFY);
+                self.balloon("Recorddy", &format!("Grabación guardada: {}", p.display()), false);
+            }
+            Event::ContinuousFailed(e) => {
+                self.continuous = ContinuousStatus::Idle;
+                self.continuous_since = None;
+                if self.cfg.continuous_mode && self.cfg.enabled {
+                    let mut c = self.cfg.clone();
+                    c.enabled = false;
+                    let _ = config::save(&c);
+                    self.apply(c, false);
+                }
+                self.tray(NIM_MODIFY);
+                self.balloon("Error en grabación continua", &e, true);
+            },
             Event::SaveFailed(e) => self.balloon(tr!("No se pudo guardar el clip", "Couldn't save the clip", "Não foi possível salvar o clipe"), &e, true),
             Event::Error(e) => {
                 // El globo sale al pasar de grabar a error, no si cambia el motivo mientras se reintenta.
@@ -350,12 +420,29 @@ fn show_menu(hwnd: HWND) {
         let _ = AppendMenuW(menu, MF_STRING, ID_EDITOR, &item(tr!("Abrir editor de clips", "Open clip editor", "Abrir editor de clipes")));
         let _ = SetMenuDefaultItem(menu, ID_EDITOR as u32, 0);
         let save_label = HSTRING::from(trf!("Guardar clip ahora\t{key}", "Save clip now\t{key}", "Salvar clipe agora\t{key}"));
-        let save_flags = if enabled { MF_STRING } else { MF_STRING | MF_GRAYED };
+        let clips_active = with_app(|a| a.cfg.enabled && !a.cfg.continuous_mode).unwrap_or(false);
+        let save_flags = if clips_active { MF_STRING } else { MF_STRING | MF_GRAYED };
         let _ = AppendMenuW(menu, save_flags, ID_SAVE, &save_label);
+        let (continuous, elapsed, hotkey) = with_app(|a| {
+            (a.continuous, a.continuous_since.map(|t| t.elapsed().as_secs()),
+             hotkey_name(a.cfg.continuous_vk, a.cfg.continuous_mods))
+        }).unwrap_or((ContinuousStatus::Idle, None, String::new()));
+        let is_continuous_mode = with_app(|a| a.cfg.continuous_mode).unwrap_or(false);
+        let label = if is_continuous_mode && enabled {
+            format!("Grabación continua · Activa ({})", fmt_secs(elapsed.unwrap_or(0).min(u32::MAX as u64) as u32))
+        } else {
+            "Grabación continua · Inactiva".to_string()
+        };
+        let label = if hotkey.is_empty() || with_app(|a| a.cfg.continuous_vk == 0).unwrap_or(true) {
+            label
+        } else { format!("{label}\t{hotkey}") };
+        let flags = if continuous == ContinuousStatus::Finishing { MF_STRING | MF_GRAYED }
+            else { MF_STRING | if is_continuous_mode && enabled { MF_CHECKED } else { MF_UNCHECKED } };
+        let _ = AppendMenuW(menu, flags, ID_CONTINUOUS, &HSTRING::from(label));
         let _ = AppendMenuW(menu, MF_STRING, ID_FOLDER, &item(tr!("Abrir carpeta de clips", "Open clips folder", "Abrir pasta de clipes")));
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-        let check = if enabled { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, MF_STRING | check, ID_TOGGLE, &item(tr!("Grabando", "Recording", "Gravando")));
+        let check = if clips_active { MF_CHECKED } else { MF_UNCHECKED };
+        let _ = AppendMenuW(menu, MF_STRING | check, ID_TOGGLE, &item("Grabar clips"));
         let mic = with_app(|a| a.cfg.mic_audio).unwrap_or(false);
         let _ = AppendMenuW(menu, MF_STRING | if mic { MF_CHECKED } else { MF_UNCHECKED }, ID_MIC, &item(tr!("Micrófono", "Microphone", "Microfone")));
         let _ = AppendMenuW(menu, MF_STRING, ID_SETTINGS, &item(tr!("Abrir Clippy", "Open Clippy", "Abrir Clippy")));
@@ -379,6 +466,9 @@ fn run_command(id: usize) {
         }
         ID_SAVE => {
             with_app(|a| a.save_clip());
+        }
+        ID_CONTINUOUS => {
+            with_app(|a| a.toggle_continuous());
         }
         ID_SETTINGS => open_settings(),
         ID_EDITOR => open_editor(),
@@ -419,19 +509,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 Some(GlobalAction::SaveClip) => {
                     with_app(|a| a.save_clip());
                 }
-                Some(GlobalAction::ToggleRecording) => {
-                    // Desde el juego no se ve la bandeja: avisar con un sonido.
-                    with_app(|a| {
-                        a.toggle();
-                        if a.cfg.enabled {
-                            sound::play_resumed();
-                        } else {
-                            sound::play_paused();
-                        }
-                    });
-                }
+                Some(GlobalAction::ToggleRecording) => { with_app(|a| a.toggle()); }
                 Some(GlobalAction::OpenEditor) => open_editor(),
                 Some(GlobalAction::OpenFolder) => open_clips_folder(),
+                Some(GlobalAction::ToggleContinuous) => { with_app(|a| a.toggle_continuous()); },
                 None => {}
             }
             LRESULT(0)
