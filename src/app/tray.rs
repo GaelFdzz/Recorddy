@@ -292,6 +292,9 @@ impl App {
                 self.tray(NIM_MODIFY);
             }
             Event::Saved(_) => {} // el sonido lo reproduce la grabadora al instante
+            Event::ContinuousStarted(p) => self.balloon("Recorddy", &format!("Grabación continua iniciada: {}", p.display()), false),
+            Event::ContinuousSaved(p) => self.balloon("Recorddy", &format!("Grabación guardada: {}", p.display()), false),
+            Event::ContinuousFailed(e) => self.balloon("Error en grabación continua", &e, true),
             Event::SaveFailed(e) => self.balloon(tr!("No se pudo guardar el clip", "Couldn't save the clip", "Não foi possível salvar o clipe"), &e, true),
             Event::Error(e) => {
                 // El globo sale al pasar de grabar a error, no si cambia el motivo mientras se reintenta.

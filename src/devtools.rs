@@ -112,6 +112,9 @@ fn test_mode(args: &[String]) -> i32 {
         match rx.recv_timeout(Duration::from_millis(200)) {
             Ok(crate::record::recorder::Event::Started(d)) => println!("encoder: {d:?}"),
             Ok(crate::record::recorder::Event::Game(g)) => println!("juego: {}", g.as_deref().unwrap_or("ninguno")),
+            Ok(crate::record::recorder::Event::ContinuousStarted(p)) => println!("Grabación larga iniciada: {}", p.display()),
+            Ok(crate::record::recorder::Event::ContinuousSaved(p)) => println!("Grabación larga guardada: {}", p.display()),
+            Ok(crate::record::recorder::Event::ContinuousFailed(e)) => eprintln!("Grabación larga: {e}"),
             Ok(crate::record::recorder::Event::Saved(p)) => {
                 println!("OK {}", p.display());
                 return 0;

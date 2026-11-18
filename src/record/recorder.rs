@@ -2,7 +2,7 @@
 //! Se despierta exactamente `fps` veces por segundo con un temporizador de alta resolución.
 
 use std::collections::VecDeque;
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, TryRecvError};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TryRecvError, TrySendError};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -14,6 +14,7 @@ use super::audio::{self, Audio, AudioBuf, Source};
 use super::capture::{Aim, Capture};
 use super::clock::{now_100ns, Timer};
 use super::convert::Converter;
+use super::continuous::ContinuousMux;
 use super::encoder::{Device, Encoder, Packet};
 use super::{game, mux};
 use crate::i18n::tr;
@@ -24,6 +25,8 @@ use crate::ui_kit::sound;
 
 pub enum Cmd {
     Save,
+    StartContinuous,
+    StopContinuous,
     /// Cambios que no necesitan reiniciar el video (duración, audio, sonido, carpeta).
     Update(Config),
     Stop,
@@ -35,6 +38,9 @@ pub enum Event {
     /// Empezó a grabar, codificando con esto.
     Started(Device),
     Saved(std::path::PathBuf),
+    ContinuousStarted(std::path::PathBuf),
+    ContinuousSaved(std::path::PathBuf),
+    ContinuousFailed(String),
     SaveFailed(String),
     Error(String),
     /// Cambió el juego detectado (nombre del ejecutable sin ".exe").
@@ -62,6 +68,16 @@ impl Recorder {
         let _ = self.tx.send(Cmd::Save);
     }
 
+    /// Comienza una sesión de grabación larga (la escritura ocurre en otro hilo).
+    pub fn start_continuous(&self) {
+        let _ = self.tx.send(Cmd::StartContinuous);
+    }
+
+    /// Detiene la sesión larga, conservando los clips instantáneos.
+    pub fn stop_continuous(&self) {
+        let _ = self.tx.send(Cmd::StopContinuous);
+    }
+
     pub fn update(&self, cfg: Config) {
         let _ = self.tx.send(Cmd::Update(cfg));
     }
@@ -73,6 +89,123 @@ impl Drop for Recorder {
         if let Some(h) = self.handle.take() {
             let _ = h.join();
         }
+    }
+}
+
+
+// La cola limitada evita acumular horas de paquetes comprimidos si el disco no
+// alcanza el ritmo de captura. Cuando se llena, la sesión se detiene con error.
+const CONTINUOUS_QUEUE: usize = 128;
+const AUDIO_BLOCK_FRAMES: i64 = 4096;
+// WASAPI puede entregar sonido con pequeño retraso respecto del video.
+const AUDIO_DELAY_FRAMES: i64 = 9_600; // 200 ms a 48 kHz
+
+enum ContinuousMessage {
+    Video(Packet, i64, Option<Vec<u8>>),
+    Audio(Vec<i16>, i64),
+}
+
+struct ContinuousSession {
+    tx: SyncSender<ContinuousMessage>,
+    handle: Option<std::thread::JoinHandle<()>>,
+    /// PTS del primer fotograma clave escrito, expresado en tiempo de captura.
+    base_pts: Option<i64>,
+    /// Cursor absoluto de muestras de audio (desde el inicio del hilo de captura).
+    audio_cursor: i64,
+}
+
+impl ContinuousSession {
+    fn new(cfg: &Config, notify: &Notify) -> Result<Self> {
+        let stamp = file_stamp();
+        let mut path = cfg.output_dir.join(format!("Recorddy_Continuous_{stamp}.mp4"));
+        let mut n = 2;
+        while path.exists() {
+            path = cfg.output_dir.join(format!("Recorddy_Continuous_{stamp}_{n}.mp4"));
+            n += 1;
+        }
+        // Crear el directorio antes de iniciar el hilo para comunicar errores inmediatamente.
+        std::fs::create_dir_all(&cfg.output_dir)?;
+        let (tx, rx) = mpsc::sync_channel(CONTINUOUS_QUEUE);
+        let with_audio = cfg.audio_on();
+        let notifier = notify.clone();
+        let handle = std::thread::Builder::new()
+            .name("recorddy-mp4".into())
+            .spawn(move || continuous_worker(rx, path, with_audio, notifier))?;
+        Ok(Self { tx, handle: Some(handle), base_pts: None, audio_cursor: 0 })
+    }
+
+    fn packet(&mut self, packet: &Packet, frame_dur: i64, enc: &Encoder) -> Result<()> {
+        if self.base_pts.is_none() {
+            if !packet.key { return Ok(()); }
+            let video_type = enc.type_blob().ok_or_else(|| anyhow::anyhow!("el encoder todavía no tiene formato H.264"))?;
+            self.base_pts = Some(packet.pts);
+            self.audio_cursor = frames_at(packet.pts);
+            return self.send(ContinuousMessage::Video(packet.clone(), frame_dur, Some(video_type)));
+        }
+        self.send(ContinuousMessage::Video(packet.clone(), frame_dur, None))
+    }
+
+    fn audio(&mut self, cfg: &Config, au: &AudioState, now: i64) -> Result<()> {
+        let Some(base) = self.base_pts else { return Ok(()); };
+        if !cfg.audio_on() { return Ok(()); }
+        // Procesar hasta 200 ms detrás del reloj para que WASAPI haya recibido el audio.
+        let end = frames_at(now).saturating_sub(AUDIO_DELAY_FRAMES).max(frames_at(base));
+        while self.audio_cursor < end {
+            let next = (self.audio_cursor + AUDIO_BLOCK_FRAMES).min(end);
+            let data = mixed_audio(cfg, au, self.audio_cursor, next);
+            let local = self.audio_cursor - frames_at(base);
+            self.send(ContinuousMessage::Audio(data, local))?;
+            self.audio_cursor = next;
+        }
+        Ok(())
+    }
+
+    fn send(&self, msg: ContinuousMessage) -> Result<()> {
+        self.tx.try_send(msg).map_err(|e| match e {
+            TrySendError::Full(_) => anyhow::anyhow!("El disco no puede seguir el ritmo de la grabación; se ha detenido la sesión larga"),
+            TrySendError::Disconnected(_) => anyhow::anyhow!("El hilo de escritura MP4 se ha detenido"),
+        })
+    }
+
+    /// Cerrar el canal permite vaciar su cola y finalizar el contenedor MP4.
+    fn finish(mut self) {
+        drop(self.tx);
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+fn continuous_worker(rx: Receiver<ContinuousMessage>, path: std::path::PathBuf, with_audio: bool, notify: Notify) {
+    let mut mux: Option<ContinuousMux> = None;
+    let result: Result<()> = (|| {
+        for msg in rx {
+            match msg {
+                ContinuousMessage::Video(packet, frame_dur, init) => {
+                    if mux.is_none() {
+                        let video_type = init.ok_or_else(|| anyhow::anyhow!("falta el formato H.264 al iniciar"))?;
+                        mux = Some(ContinuousMux::start(path.clone(), &video_type, with_audio)?);
+                        notify(Event::ContinuousStarted(path.clone()));
+                    }
+                    mux.as_mut().unwrap().write_video(&packet, frame_dur)?;
+                }
+                ContinuousMessage::Audio(data, frame) => {
+                    if let Some(m) = mux.as_mut() { m.write_audio(&data, frame)?; }
+                }
+            }
+        }
+        if let Some(m) = mux.take() {
+            let saved = m.finish()?;
+            notify(Event::ContinuousSaved(saved));
+        } else {
+            // No se llegó a escribir un fotograma clave: no existe MP4 que guardar.
+            notify(Event::ContinuousFailed("Grabación detenida antes del primer fotograma clave".into()));
+        }
+        Ok(())
+    })();
+    if let Err(e) = result {
+        log(&format!("grabación continua: {e:?}"));
+        notify(Event::ContinuousFailed(e.to_string()));
     }
 }
 
@@ -122,6 +255,8 @@ fn thread_main(mut cfg: Config, rx: Receiver<Cmd>, notify: Notify) {
                     Ok(Cmd::Stop) | Err(RecvTimeoutError::Disconnected) => break,
                     Ok(Cmd::Update(c)) => cfg = c,
                     Ok(Cmd::Save) => notify(Event::SaveFailed(tr!("Clippy no está grabando en este momento", "Clippy isn't recording right now", "O Clippy não está gravando agora").into())),
+                    Ok(Cmd::StartContinuous) => notify(Event::ContinuousFailed("No se puede iniciar una grabación continua sin captura activa".into())),
+                    Ok(Cmd::StopContinuous) => {},
                     Err(RecvTimeoutError::Timeout) => {}
                 }
             }
@@ -302,11 +437,26 @@ fn session(
     let mut next_frame = 0i64;
     let mut packets: VecDeque<Packet> = VecDeque::new();
     let mut out = Vec::new();
+    let mut continuous: Option<ContinuousSession> = None;
 
     loop {
         loop {
             match rx.try_recv() {
-                Ok(Cmd::Stop) | Err(TryRecvError::Disconnected) => return Ok(End::Stop),
+                Ok(Cmd::Stop) | Err(TryRecvError::Disconnected) => {
+                    if let Some(c) = continuous.take() { c.finish(); }
+                    return Ok(End::Stop);
+                },
+                Ok(Cmd::StartContinuous) => {
+                    if continuous.is_none() {
+                        match ContinuousSession::new(cfg, notify) {
+                            Ok(c) => continuous = Some(c),
+                            Err(e) => notify(Event::ContinuousFailed(e.to_string())),
+                        }
+                    }
+                },
+                Ok(Cmd::StopContinuous) => {
+                    if let Some(c) = continuous.take() { c.finish(); }
+                },
                 Ok(Cmd::Save) => {
                     let now = now_100ns() - t0;
                     if save_clip(cfg, &packets, &enc, &au, now, frame_dur, notify) && cfg.sound_on_save {
@@ -337,6 +487,7 @@ fn session(
             game_monitor = gm;
             if let Some(m) = gm.or_else(game::active_monitor) {
                 if let Aim::Restart = cap.aim(m, native) {
+                    if let Some(c) = continuous.take() { c.finish(); }
                     return Ok(End::Restart(m));
                 }
             }
@@ -354,6 +505,14 @@ fn session(
         au.mic.poll(t0);
 
         enc.poll(&mut out)?;
+        if let Some(c) = continuous.as_mut() {
+            let result = out.iter().try_for_each(|packet| c.packet(packet, frame_dur, &enc))
+                .and_then(|_| c.audio(cfg, &au, now));
+            if let Err(e) = result {
+                notify(Event::ContinuousFailed(e.to_string()));
+                if let Some(c) = continuous.take() { c.finish(); }
+            }
+        }
         packets.extend(out.drain(..));
         if !packets.is_empty() {
             *untested = None;
