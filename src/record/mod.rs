@@ -4,6 +4,7 @@ pub mod audio;
 mod capture;
 pub mod clock;
 mod convert;
+mod continuous;
 mod encoder;
 mod game;
 mod mux;
