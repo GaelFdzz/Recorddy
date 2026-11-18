@@ -92,7 +92,7 @@ impl EditorApp {
         }
         self.pause();
         self.export_dlg = Some(ExportDialog {
-            name: format!("Clippy_edit_{}", file_stamp()),
+            name: format!("Recorddy_edit_{}", file_stamp()),
             dir: self.cfg.output_dir.clone(),
             height: self.prefs.export_height,
             fps: self.prefs.export_fps,

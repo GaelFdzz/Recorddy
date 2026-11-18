@@ -1,4 +1,4 @@
-//! Configuración persistente (%APPDATA%\Clippy\config.json).
+//! Configuración persistente (%APPDATA%\Recorddy\config.json).
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -58,6 +58,8 @@ pub const RESOLUTIONS: [u32; 4] = [0, 1440, 1080, 720];
 #[serde(default)]
 pub struct Config {
     pub enabled: bool,
+    /// Si es true, la única salida activa es la grabación continua.
+    pub continuous_mode: bool,
     pub output_dir: PathBuf,
     pub seconds: u32,
     pub hotkey_vk: u32,
@@ -78,6 +80,9 @@ pub struct Config {
     pub mic_volume: u32,
     pub mic_device: String,
     pub capture_mode: CaptureMode,
+    /// Vacío = cambiar automáticamente al monitor del juego/ventana activa.
+    /// En modo fijo, almacena el nombre de Windows (por ejemplo, \\.\DISPLAY1).
+    pub monitor_name: String,
     pub sound_on_save: bool,
     /// Atajo global para pausar/reanudar la grabación (vk 0 = sin asignar).
     pub toggle_vk: u32,
@@ -88,6 +93,9 @@ pub struct Config {
     /// Atajo global para abrir la carpeta de clips (vk 0 = sin asignar).
     pub folder_vk: u32,
     pub folder_mods: u32,
+    /// Atajo opcional para iniciar/detener una sesión larga (0 = sin asignar).
+    pub continuous_vk: u32,
+    pub continuous_mods: u32,
     /// Idioma de la interfaz ("auto" = el de Windows).
     pub language: Language,
 }
@@ -99,11 +107,12 @@ pub enum GlobalAction {
     ToggleRecording,
     OpenEditor,
     OpenFolder,
+    ToggleContinuous,
 }
 
 impl GlobalAction {
-    pub const ALL: [GlobalAction; 4] =
-        [GlobalAction::SaveClip, GlobalAction::ToggleRecording, GlobalAction::OpenEditor, GlobalAction::OpenFolder];
+    pub const ALL: [GlobalAction; 5] =
+        [GlobalAction::SaveClip, GlobalAction::ToggleRecording, GlobalAction::OpenEditor, GlobalAction::OpenFolder, GlobalAction::ToggleContinuous];
 
     /// Id para RegisterHotKey / WM_HOTKEY.
     pub fn id(self) -> i32 {
@@ -117,9 +126,10 @@ impl GlobalAction {
     pub fn label(self) -> &'static str {
         match self {
             GlobalAction::SaveClip => tr!("Guardar clip", "Save clip", "Salvar clipe"),
-            GlobalAction::ToggleRecording => tr!("Pausar / reanudar grabación", "Pause / resume recording", "Pausar / retomar gravação"),
+            GlobalAction::ToggleRecording => tr!("Activar / desactivar clips", "Toggle clips", "Ativar / desativar clipes"),
             GlobalAction::OpenEditor => tr!("Abrir el editor", "Open the editor", "Abrir o editor"),
             GlobalAction::OpenFolder => tr!("Abrir la carpeta de clips", "Open the clips folder", "Abrir a pasta de clipes"),
+            GlobalAction::ToggleContinuous => tr!("Iniciar / detener grabación continua", "Start / stop continuous recording", "Iniciar / parar gravação contínua"),
         }
     }
 }
@@ -128,6 +138,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             enabled: true,
+            continuous_mode: false,
             output_dir: default_output_dir(),
             seconds: 30,
             hotkey_vk: 0x78, // F9
@@ -143,6 +154,7 @@ impl Default for Config {
             mic_volume: 100,
             mic_device: String::new(),
             capture_mode: CaptureMode::Screen,
+            monitor_name: String::new(),
             sound_on_save: true,
             toggle_vk: 0,
             toggle_mods: 0,
@@ -150,6 +162,8 @@ impl Default for Config {
             editor_mods: 0,
             folder_vk: 0,
             folder_mods: 0,
+            continuous_vk: 0,
+            continuous_mods: 0,
             language: Language::Auto,
         }
     }
@@ -167,8 +181,8 @@ pub fn fit_short(full: (u32, u32), short: u32) -> (u32, u32) {
 
 impl Config {
     /// Valores que obligan a reiniciar la captura de video si cambian (se pierde el buffer).
-    pub fn video_params(&self) -> (bool, u32, u32, u32) {
-        (self.enabled, self.fps, self.bitrate_mbps, self.resolution)
+    pub fn video_params(&self) -> (bool, bool, u32, u32, u32, &str) {
+        (self.enabled, self.continuous_mode, self.fps, self.bitrate_mbps, self.resolution, self.monitor_name.as_str())
     }
 
     /// Tamaño del video (pares) para un monitor que se grabaría a `full`, con la resolución elegida.
@@ -222,6 +236,7 @@ impl Config {
             GlobalAction::ToggleRecording => (self.toggle_vk, self.toggle_mods),
             GlobalAction::OpenEditor => (self.editor_vk, self.editor_mods),
             GlobalAction::OpenFolder => (self.folder_vk, self.folder_mods),
+            GlobalAction::ToggleContinuous => (self.continuous_vk, self.continuous_mods),
         }
     }
 
@@ -250,6 +265,7 @@ impl Config {
             GlobalAction::ToggleRecording => (&mut self.toggle_vk, &mut self.toggle_mods),
             GlobalAction::OpenEditor => (&mut self.editor_vk, &mut self.editor_mods),
             GlobalAction::OpenFolder => (&mut self.folder_vk, &mut self.folder_mods),
+            GlobalAction::ToggleContinuous => (&mut self.continuous_vk, &mut self.continuous_mods),
         }
     }
 }
@@ -276,6 +292,22 @@ pub fn exists() -> bool {
 
 /// Lee config.json y aplica su idioma a este proceso (así cada ventana y la bandeja lo siguen al recargar).
 pub fn load() -> Config {
+    // Migración no destructiva: solo copia la configuración anterior la primera vez.
+    // No mueve ni elimina videos, y nunca sobrescribe la configuración de Recorddy.
+    let new_path = config_path();
+    if !new_path.exists() {
+        if let Some(roaming) = std::env::var_os("APPDATA") {
+            let old_path = PathBuf::from(roaming).join("Clippy").join("config.json");
+            if old_path.is_file() {
+                if let Some(dir) = new_path.parent() {
+                    if std::fs::create_dir_all(dir).is_ok() {
+                        let _ = std::fs::copy(old_path, &new_path);
+                    }
+                }
+            }
+        }
+    }
+
     let mut cfg: Config = std::fs::read_to_string(config_path())
         .ok()
         .and_then(|s| serde_json::from_str(s.trim_start_matches('\u{feff}')).ok())
@@ -302,7 +334,7 @@ fn default_output_dir() -> PathBuf {
             let s = p.to_string().ok();
             CoTaskMemFree(Some(p.0 as *const _));
             if let Some(s) = s {
-                return PathBuf::from(s).join("Clippy");
+                return PathBuf::from(s).join("Recorddy");
             }
         }
     }
@@ -310,5 +342,5 @@ fn default_output_dir() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_default()
         .join("Videos")
-        .join("Clippy")
+        .join("Recorddy")
 }

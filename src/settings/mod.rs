@@ -1,4 +1,4 @@
-//! Ventana principal / ajustes (proceso aparte: `clippy.exe --settings`).
+//! Ventana principal / ajustes (proceso aparte: `recorddy.exe --settings`).
 //! Al cerrarla el proceso termina, así que mientras jugás no ocupa nada.
 
 use std::path::Path;
@@ -69,6 +69,7 @@ struct SettingsApp {
     /// Carpeta y fecha de la última vez que se contaron los clips.
     clips_seen: Option<(std::path::PathBuf, Option<SystemTime>)>,
     mics: Vec<(String, String)>,
+    monitors: Vec<(String, String)>,
     /// Versión nueva disponible y estado de la descarga.
     update: Option<(String, String)>,
     update_status: Shared<Result<(), String>>,
@@ -117,6 +118,7 @@ impl SettingsApp {
             clips: (0, None),
             clips_seen: None,
             mics: audio::capture_devices(),
+            monitors: crate::record::monitor_choices(),
             update: None,
             update_status: Default::default(),
             updating: false,
@@ -144,7 +146,7 @@ impl SettingsApp {
         }
     }
 
-    /// Descarga la versión nueva en segundo plano y la instala (cierra todo y vuelve a abrir Clippy).
+    /// Descarga la versión nueva en segundo plano y la instala (cierra todo y vuelve a abrir Recorddy).
     fn start_update(&mut self) {
         let Some((_, url)) = self.update.clone() else { return };
         if self.update_busy() {
@@ -371,7 +373,7 @@ impl eframe::App for SettingsApp {
         self.news_modals(ctx);
         if self.confirm_quit {
             let mut quit = false;
-            let title = tr!("¿Salir de Clippy?", "Quit Clippy?", "Sair do Clippy?");
+            let title = tr!("¿Salir de Recorddy?", "Quit Recorddy?", "Sair do Recorddy?");
             let sub = tr!("Deja de grabar y se cierra todo.", "Recording stops and everything closes.", "A gravação para e tudo é fechado.");
             let x = modal(ctx, "quit", title, sub, 480.0, |ui| {
                 modal_body(ui, |ui| {
@@ -379,11 +381,11 @@ impl eframe::App for SettingsApp {
                         egui::Label::new(
                             RichText::new(tr!(
                                 "Se cierran el editor y esta ventana. Lo que todavía no guardaste como clip se pierde.\n\n\
-                                 Si solo querés cerrar la ventana, usá la X: Clippy sigue grabando en segundo plano.",
+                                 Si solo querés cerrar la ventana, usá la X: Recorddy sigue grabando en segundo plano.",
                                 "The editor and this window close. Anything you haven't saved as a clip is lost.\n\n\
-                                 If you only want to close the window, use the X: Clippy keeps recording in the background.",
+                                 If you only want to close the window, use the X: Recorddy keeps recording in the background.",
                                 "O editor e esta janela são fechados. O que você ainda não salvou como clipe se perde.\n\n\
-                                 Se quiser só fechar a janela, use o X: o Clippy continua gravando em segundo plano.",
+                                 Se quiser só fechar a janela, use o X: o Recorddy continua gravando em segundo plano.",
                             ))
                             .color(MUTED),
                         )

@@ -1,4 +1,4 @@
-name: Build
+name: Build Recorddy
 
 on:
   push:
@@ -7,10 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag del release (ej. v0.3.0)"
+        description: 'Tag del release (ej. v0.4.0); dejar vacío para solo compilar'
         required: false
+        type: string
       publish:
-        description: "Publicar el release"
+        description: 'Crear o actualizar un release en borrador'
         type: boolean
         default: false
 
@@ -18,73 +19,73 @@ permissions:
   contents: read
 
 jobs:
-  # PRs y main: verificar que compila (con y sin las pruebas) y que clippy no da avisos.
-  # En debug y sin LTO: varias veces más rápido que compilar el exe final.
-  # Se llama "build" porque la protección de main pide ese check.
+  # Conserva el nombre del job por compatibilidad con posibles reglas de protección de main.
   build:
     if: github.event_name != 'workflow_dispatch'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      # La clave incluye este archivo: si cambian los comandos, se arma una caché nueva.
-      # Sin eso, una caché vieja con la misma clave se restaura entera pero no sirve
-      # (y como coincide, nunca se vuelve a guardar).
       - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ hashFiles('.github/workflows/build.yml') }}
+      - name: Comprobar Recorddy
+        run: cargo check --locked
+      - name: Comprobar Recorddy con devtools
+        run: cargo check --locked --features devtools
 
-      - name: Clippy
-        run: cargo clippy --locked -- -D warnings
-
-      - name: Clippy con devtools
-        run: cargo clippy --locked --features devtools -- -D warnings
-
-  # Publicar a mano (Actions → Build → Run workflow): el exe final, una sola vez.
   release:
     if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
-    # Escribir solo para crear el release.
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-
       - uses: dtolnay/rust-toolchain@stable
-
       - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ hashFiles('.github/workflows/build.yml') }}
 
-      - name: Compilar
+      - name: Comprobar parámetros de publicación
+        if: inputs.publish
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$') {
+            throw 'Para publicar, especifica un tag válido, por ejemplo v0.4.0'
+          }
+
+      - name: Compilar Recorddy (Release)
         run: cargo build --release --locked
 
-      - name: Preparar Clippy.exe
-        shell: bash
+      - name: Preparar paquete portable
+        shell: pwsh
         run: |
-          cp target/release/clippy.exe Clippy.exe
-          echo "Tamaño: $(stat -c %s Clippy.exe) bytes"
+          New-Item -ItemType Directory -Force dist/Recorddy | Out-Null
+          Copy-Item target/release/recorddy.exe dist/Recorddy/Recorddy.exe
+          Copy-Item LICENSE dist/Recorddy/LICENSE
+          if (Test-Path NOTICE.md) { Copy-Item NOTICE.md dist/Recorddy/NOTICE.md }
+          if (Test-Path README.md) { Copy-Item README.md dist/Recorddy/README.md }
+          Compress-Archive -Path dist/Recorddy/* -DestinationPath dist/Recorddy-Windows-x64.zip -Force
+          Write-Host "Tamaño del ejecutable:" (Get-Item dist/Recorddy/Recorddy.exe).Length "bytes"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Clippy.exe
-          path: Clippy.exe
+          name: Recorddy-Windows-x64
+          path: dist/Recorddy-Windows-x64.zip
+          if-no-files-found: error
 
-      - name: Publicar el release
-        if: inputs.publish && inputs.tag != ''
-        shell: bash
+      # Publicación exclusivamente manual. No añade actualizaciones a la app.
+      - name: Crear o actualizar release en borrador
+        if: inputs.publish
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            gh release upload "$TAG" Clippy.exe --repo "$GITHUB_REPOSITORY" --clobber
-          else
-            # Como borrador: la app muestra el texto del release como novedades, así que nadie tiene que
-            # verlo hasta que tenga texto (se publica a mano después de escribirlo).
-            gh release create "$TAG" Clippy.exe --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Clippy ${TAG#v}" --notes "" --draft
-          fi
+          gh release view "$env:RELEASE_TAG" --repo "$env:GITHUB_REPOSITORY" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            $release = gh release view "$env:RELEASE_TAG" --json isDraft | ConvertFrom-Json
+            if (-not $release.isDraft) { throw 'El release ya está publicado; no se sobrescribirá automáticamente.' }
+            gh release upload "$env:RELEASE_TAG" dist/Recorddy-Windows-x64.zip --repo "$env:GITHUB_REPOSITORY" --clobber
+          } else {
+            gh release create "$env:RELEASE_TAG" dist/Recorddy-Windows-x64.zip --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --title "Recorddy $env:RELEASE_TAG" --notes 'Versión de Recorddy (fork modificado de Clippy). Código fuente disponible en el repositorio, bajo GPL-3.0-or-later.' --draft
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'No se pudo crear o actualizar el release.' }

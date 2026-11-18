@@ -61,7 +61,7 @@ fn test_mic() -> i32 {
     0
 }
 
-/// `clippy --test <segundos_a_esperar> <carpeta> [game|desktop|mic|juegos|720|1080|1440]`: graba, guarda un clip y sale (para pruebas).
+/// `recorddy --test <segundos_a_esperar> <carpeta> [game|desktop|mic|juegos|720|1080|1440]`: graba, guarda un clip y sale (para pruebas).
 /// Cambia el modo de video del monitor principal solo mientras dura la prueba (None = el de siempre).
 fn set_mode(size: Option<(u32, u32)>) -> windows::Win32::Graphics::Gdi::DISP_CHANGE {
     use windows::Win32::Graphics::Gdi::*;
@@ -112,6 +112,9 @@ fn test_mode(args: &[String]) -> i32 {
         match rx.recv_timeout(Duration::from_millis(200)) {
             Ok(crate::record::recorder::Event::Started(d)) => println!("encoder: {d:?}"),
             Ok(crate::record::recorder::Event::Game(g)) => println!("juego: {}", g.as_deref().unwrap_or("ninguno")),
+            Ok(crate::record::recorder::Event::ContinuousStarted(p)) => println!("Grabación larga iniciada: {}", p.display()),
+            Ok(crate::record::recorder::Event::ContinuousSaved(p)) => println!("Grabación larga guardada: {}", p.display()),
+            Ok(crate::record::recorder::Event::ContinuousFailed(e)) => eprintln!("Grabación larga: {e}"),
             Ok(crate::record::recorder::Event::Saved(p)) => {
                 println!("OK {}", p.display());
                 return 0;

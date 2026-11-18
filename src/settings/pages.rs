@@ -32,7 +32,7 @@ impl SettingsApp {
     pub(super) fn nav(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             app_mark(ui, 28.0);
-            ui.label(RichText::new("Clippy").family(bold()).size(20.0).color(TEXT));
+            ui.label(RichText::new("Recorddy").family(bold()).size(20.0).color(TEXT));
         });
         ui.add_space(16.0);
 
@@ -45,19 +45,38 @@ impl SettingsApp {
                     let (txt, col) = if error.is_some() {
                         (tr!("No puede grabar", "Can't record", "Não consegue gravar"), DANGER)
                     } else if self.cfg.enabled {
-                        (tr!("Grabando", "Recording", "Gravando"), TEXT)
+                        (if self.cfg.continuous_mode { "Grabación continua" } else { "Grabando clips" }, TEXT)
                     } else {
                         (tr!("En pausa", "Paused", "Pausado"), MUTED)
                     };
                     let (r, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
                     ui.painter().circle_filled(r.center(), 4.0, col);
                     ui.label(RichText::new(txt).family(bold()).color(col));
+                });
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Grabar clips").size(12.5).color(TEXT));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        toggle(ui, &mut self.cfg.enabled).on_hover_text(if self.cfg.enabled { tr!("Pausar", "Pause", "Pausar") } else { tr!("Reanudar", "Resume", "Retomar") });
+                        let mut active = self.cfg.enabled && !self.cfg.continuous_mode;
+                        if toggle(ui, &mut active).changed() {
+                            self.cfg.continuous_mode = false;
+                            self.cfg.enabled = active;
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Grabación continua").size(12.5).color(TEXT));
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let mut active = self.cfg.enabled && self.cfg.continuous_mode;
+                        if toggle(ui, &mut active).changed() {
+                            self.cfg.continuous_mode = true;
+                            self.cfg.enabled = active;
+                        }
                     });
                 });
                 let sub = if let Some(e) = error {
-                    trf!("{e} Clippy vuelve a intentar solo.", "{e} Clippy keeps trying by itself.", "{e} O Clippy tenta de novo sozinho.")
+                    trf!("{e} Recorddy vuelve a intentar solo.", "{e} Recorddy keeps trying by itself.", "{e} O Recorddy tenta de novo sozinho.")
+                } else if self.cfg.enabled && self.cfg.continuous_mode {
+                    "Grabación continua activa · utiliza el interruptor para detenerla".into()
                 } else if self.cfg.enabled {
                     let (key, secs) = (hotkey_name(self.cfg.hotkey_vk, self.cfg.hotkey_mods), fmt_secs(self.cfg.seconds));
                     trf!("{key} guarda los últimos {secs}", "{key} saves the last {secs}", "{key} salva os últimos {secs}")
@@ -87,7 +106,7 @@ impl SettingsApp {
         }
 
         ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-            if wide_button(ui, tr!("Salir de Clippy", "Quit Clippy", "Sair do Clippy"), Kind::Danger, 36.0)
+            if wide_button(ui, tr!("Salir de Recorddy", "Quit Recorddy", "Sair do Recorddy"), Kind::Danger, 36.0)
                 .on_hover_text(tr!("Deja de grabar y cierra todo", "Stops recording and closes everything", "Para de gravar e fecha tudo"))
                 .clicked()
             {
@@ -224,7 +243,7 @@ impl SettingsApp {
     pub(super) fn about_section(&mut self, ui: &mut egui::Ui) {
         section(ui, tr!("Acerca de", "About", "Sobre"), |ui| {
             row(ui, tr!("Versión", "Version", "Versão"), LABEL_W, |ui| {
-                ui.label(RichText::new(format!("Clippy {}", env!("CARGO_PKG_VERSION"))).color(TEXT));
+                ui.label(RichText::new(format!("Recorddy {}", env!("CARGO_PKG_VERSION"))).color(TEXT));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.label(RichText::new(tr!(
                         "Versión local · sin actualizaciones automáticas",
@@ -268,9 +287,9 @@ impl SettingsApp {
                 ui,
                 LABEL_W + 8.0,
                 trf!(
-                    "Tu placa de video no tiene codificador de video o no se pudo usar, así que Clippy usa el procesador y graba hasta {p}p a {fps} cuadros por segundo para no frenar el juego.",
-                    "Your graphics card has no video encoder or it couldn't be used, so Clippy uses the processor and records up to {p}p at {fps} frames per second so it doesn't slow down your game.",
-                    "Sua placa de vídeo não tem codificador de vídeo ou ele não pôde ser usado, então o Clippy usa o processador e grava até {p}p a {fps} quadros por segundo para não deixar o jogo lento."
+                    "Tu placa de video no tiene codificador de video o no se pudo usar, así que Recorddy usa el procesador y graba hasta {p}p a {fps} cuadros por segundo para no frenar el juego.",
+                    "Your graphics card has no video encoder or it couldn't be used, so Recorddy uses the processor and records up to {p}p at {fps} frames per second so it doesn't slow down your game.",
+                    "Sua placa de vídeo não tem codificador de vídeo ou ele não pôde ser usado, então o Recorddy usa o processador e grava até {p}p a {fps} quadros por segundo para não deixar o jogo lento."
                 ),
             );
         }
@@ -389,6 +408,32 @@ impl SettingsApp {
                     )
                 },
             );
+            divider(ui);
+            row(ui, tr!("Pantalla", "Monitor", "Tela"), LABEL_W, |ui| {
+                egui::ComboBox::from_id_salt("recorddy-monitor-select")
+                    .selected_text(if self.cfg.monitor_name.is_empty() {
+                        tr!("Automático", "Automatic", "Automático").to_owned()
+                    } else {
+                        self.monitors.iter()
+                            .find(|(id, _)| id == &self.cfg.monitor_name)
+                            .map(|(_, label)| label.clone())
+                            .unwrap_or_else(|| self.cfg.monitor_name.clone())
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.cfg.monitor_name, String::new(), tr!("Automático", "Automatic", "Automático"));
+                        for (id, label) in &self.monitors {
+                            ui.selectable_value(&mut self.cfg.monitor_name, id.clone(), label);
+                        }
+                    });
+                if button(ui, tr!("Actualizar", "Refresh", "Atualizar"), Kind::Secondary).clicked() {
+                    self.monitors = crate::record::monitor_choices();
+                }
+            });
+            hint(ui, LABEL_W + 8.0, tr!(
+                "Automático sigue el monitor del juego o de la ventana activa. Una pantalla fija no cambia al mover las ventanas. Cambiar de monitor puede finalizar una grabación continua activa.",
+                "Automatic follows the game or active window. A fixed monitor ignores window focus. Switching monitors may end an active continuous recording.",
+                "Automático segue o monitor do jogo ou da janela ativa. Uma tela fixa não muda com o foco. A troca de monitor pode encerrar uma gravação contínua ativa."
+            ));
             divider(ui);
             row(ui, tr!("Memoria", "Memory", "Memória"), LABEL_W, |ui| {
                 let ram = fmt_bytes(self.cfg.typical_ram_mb() as f64 * 1e6);

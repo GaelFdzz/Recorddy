@@ -25,6 +25,7 @@ const NOT_GAMES: &[&str] = &[
     // El recorte de pantalla de Windows tapa todo el monitor mientras elegís qué capturar.
     "snippingtool", "screenclippinghost",
     "clippy",
+    "recorddy",
 ];
 
 const FS_EVERY: i64 = 2_500_000; // 250 ms
