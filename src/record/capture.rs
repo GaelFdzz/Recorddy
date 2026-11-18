@@ -77,6 +77,15 @@ pub struct Capture {
 }
 
 impl Capture {
+    /// Nombres de pantallas que puede seleccionar el usuario.
+    pub fn screens() -> Vec<String> { monitor_names() }
+
+    /// Elige la pantalla concreta, sin cambiar a otra si no está conectada.
+    pub fn for_name(name: &str) -> Result<Self> {
+        let monitor = monitor_by_name(name)
+            .ok_or_else(|| anyhow!("Pantalla seleccionada no disponible: {name}"))?;
+        Self::new(Some(monitor))
+    }
     /// Captura `monitor` (o el principal si no hay o ya no existe). Prueba cada GPU que lo ve:
     /// en notebooks con dos GPUs la que lo enumera primero no siempre puede duplicarlo.
     pub fn new(monitor: Option<HMONITOR>) -> Result<Self> {
@@ -293,6 +302,35 @@ impl Capture {
         }
         Ok(())
     }
+}
+
+/// Enumeración de monitores físicos activos usando las mismas salidas DXGI que la captura.
+/// El nombre es estable durante la sesión y se guarda en la configuración (DISPLAY1, DISPLAY2...).
+pub(super) fn monitor_names() -> Vec<String> {
+    let factory: IDXGIFactory1 = match unsafe { CreateDXGIFactory1() } { Ok(f) => f, Err(_) => return Vec::new() };
+    let mut names = Vec::new();
+    let mut i = 0;
+    while let Ok(adapter) = unsafe { factory.EnumAdapters1(i) } {
+        i += 1;
+        for output in outputs(&adapter) {
+            if !names.contains(&output.name) { names.push(output.name); }
+        }
+    }
+    names.sort();
+    names
+}
+
+/// Resuelve la selección guardada al HMONITOR de la sesión actual.
+fn monitor_by_name(name: &str) -> Option<HMONITOR> {
+    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1().ok()? };
+    let mut i = 0;
+    while let Ok(adapter) = unsafe { factory.EnumAdapters1(i) } {
+        i += 1;
+        for output in outputs(&adapter) {
+            if output.name == name { return Some(output.monitor); }
+        }
+    }
+    None
 }
 
 /// Monitores conectados al escritorio que ve esta GPU.

@@ -80,6 +80,9 @@ pub struct Config {
     pub mic_volume: u32,
     pub mic_device: String,
     pub capture_mode: CaptureMode,
+    /// Vacío = cambiar automáticamente al monitor del juego/ventana activa.
+    /// En modo fijo, almacena el nombre de Windows (por ejemplo, \\.\DISPLAY1).
+    pub monitor_name: String,
     pub sound_on_save: bool,
     /// Atajo global para pausar/reanudar la grabación (vk 0 = sin asignar).
     pub toggle_vk: u32,
@@ -151,6 +154,7 @@ impl Default for Config {
             mic_volume: 100,
             mic_device: String::new(),
             capture_mode: CaptureMode::Screen,
+            monitor_name: String::new(),
             sound_on_save: true,
             toggle_vk: 0,
             toggle_mods: 0,
@@ -177,8 +181,8 @@ pub fn fit_short(full: (u32, u32), short: u32) -> (u32, u32) {
 
 impl Config {
     /// Valores que obligan a reiniciar la captura de video si cambian (se pierde el buffer).
-    pub fn video_params(&self) -> (bool, bool, u32, u32, u32) {
-        (self.enabled, self.continuous_mode, self.fps, self.bitrate_mbps, self.resolution)
+    pub fn video_params(&self) -> (bool, bool, u32, u32, u32, &str) {
+        (self.enabled, self.continuous_mode, self.fps, self.bitrate_mbps, self.resolution, self.monitor_name.as_str())
     }
 
     /// Tamaño del video (pares) para un monitor que se grabaría a `full`, con la resolución elegida.

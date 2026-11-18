@@ -390,8 +390,12 @@ fn session(
 ) -> Result<End> {
     let mut game = game::Detector::default();
     game.poll(0);
-    // Qué monitor grabar: el del juego; si no hay juego, el de la ventana activa; si no, el principal.
-    let mut cap = Capture::new(restarted.or_else(|| game.monitor()).or_else(game::active_monitor))?;
+    // Automático: sigue juego/ventana activa. Fijo: solo la pantalla elegida.
+    let mut cap = if cfg.monitor_name.is_empty() {
+        Capture::new(restarted.or_else(|| game.monitor()).or_else(game::active_monitor))?
+    } else {
+        Capture::for_name(&cfg.monitor_name)?
+    };
     let mut size = cfg.video_size((cap.width, cap.height));
     if align {
         size = align16(size);
@@ -488,14 +492,16 @@ fn session(
         }
         if now >= next_aim {
             next_aim = now + AIM_EVERY;
-            // Cuando el juego aparece o se muda de monitor, el video toma la resolución de ese monitor.
-            let gm = au.game.monitor();
-            let native = gm.is_some() && gm != game_monitor;
-            game_monitor = gm;
-            if let Some(m) = gm.or_else(game::active_monitor) {
-                if let Aim::Restart = cap.aim(m, native) {
-                    if let Some(c) = continuous.take() { c.finish(); }
-                    return Ok(End::Restart(m));
+            // La selección fija no sigue el foco ni el monitor del juego.
+            if cfg.monitor_name.is_empty() {
+                let gm = au.game.monitor();
+                let native = gm.is_some() && gm != game_monitor;
+                game_monitor = gm;
+                if let Some(m) = gm.or_else(game::active_monitor) {
+                    if let Aim::Restart = cap.aim(m, native) {
+                        if let Some(c) = continuous.take() { c.finish(); }
+                        return Ok(End::Restart(m));
+                    }
                 }
             }
         }
