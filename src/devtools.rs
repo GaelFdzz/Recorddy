@@ -61,7 +61,7 @@ fn test_mic() -> i32 {
     0
 }
 
-/// `clippy --test <segundos_a_esperar> <carpeta> [game|desktop|mic|juegos|720|1080|1440]`: graba, guarda un clip y sale (para pruebas).
+/// `recorddy --test <segundos_a_esperar> <carpeta> [game|desktop|mic|juegos|720|1080|1440]`: graba, guarda un clip y sale (para pruebas).
 /// Cambia el modo de video del monitor principal solo mientras dura la prueba (None = el de siempre).
 fn set_mode(size: Option<(u32, u32)>) -> windows::Win32::Graphics::Gdi::DISP_CHANGE {
     use windows::Win32::Graphics::Gdi::*;

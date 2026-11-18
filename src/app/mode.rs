@@ -76,7 +76,7 @@ impl Mode {
     }
 }
 
-/// Ventanas de Clippy que corren en su propio proceso.
+/// Ventanas de Recorddy que corren en su propio proceso.
 #[derive(Clone, Copy)]
 pub enum Window {
     Settings,
@@ -91,10 +91,10 @@ impl Window {
 
     fn title_in(self, lang: Lang) -> &'static str {
         match (self, lang) {
-            (Window::Settings, _) => "Clippy",
-            (Window::Editor, Lang::Es) => "Editor de Clippy",
-            (Window::Editor, Lang::En) => "Clippy Editor",
-            (Window::Editor, Lang::Pt) => "Editor do Clippy",
+            (Window::Settings, _) => "Recorddy",
+            (Window::Editor, Lang::Es) => "Editor de Recorddy",
+            (Window::Editor, Lang::En) => "Recorddy Editor",
+            (Window::Editor, Lang::Pt) => "Editor do Recorddy",
         }
     }
 
@@ -106,8 +106,8 @@ impl Window {
     /// Candado de instancia única.
     pub fn mutex(self) -> PCWSTR {
         match self {
-            Window::Settings => w!("Local\\Clippy.Settings"),
-            Window::Editor => w!("Local\\Clippy.Editor"),
+            Window::Settings => w!("Local\\Recorddy.Settings"),
+            Window::Editor => w!("Local\\Recorddy.Editor"),
         }
     }
 
@@ -129,9 +129,9 @@ impl Window {
 // --- Proceso de la bandeja (grabadora) ------------------------------------------------
 
 /// Candado de instancia única de la grabadora.
-pub const TRAY_MUTEX: PCWSTR = w!("Local\\Clippy.Main");
+pub const TRAY_MUTEX: PCWSTR = w!("Local\\Recorddy.Main");
 /// Clase de la ventana oculta de la grabadora (recibe los mensajes de los otros procesos).
-pub const TRAY_CLASS: PCWSTR = w!("ClippyHostWindow");
+pub const TRAY_CLASS: PCWSTR = w!("RecorddyHostWindow");
 // Mensajes que recibe la ventana de la bandeja (todos acá para que no se pisen los números).
 /// Clic en el ícono de la bandeja (lo manda Windows).
 pub const WM_TRAY: u32 = WM_APP + 1;

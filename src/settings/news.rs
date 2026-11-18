@@ -18,7 +18,7 @@ impl SettingsApp {
         if let Some((v, text)) = self.news.clone() {
             let mut done = false;
             let title = trf!("Novedades de la {v}", "What's new in {v}", "Novidades da {v}");
-            let sub = tr!("Clippy se actualizó. Esto es lo que cambió.", "Clippy was updated. Here's what changed.", "O Clippy foi atualizado. Veja o que mudou.");
+            let sub = tr!("Recorddy se actualizó. Esto es lo que cambió.", "Recorddy was updated. Here's what changed.", "O Recorddy foi atualizado. Veja o que mudou.");
             let x = notes_modal(ctx, "news", &title, sub, Some(&text), |ui| {
                 done = button_sized(ui, tr!("Listo", "Done", "Pronto"), Kind::Primary, BUTTON).clicked();
             });
@@ -30,9 +30,9 @@ impl SettingsApp {
             let (mut install, mut later) = (false, false);
             let cur = update::current();
             let sub = trf!(
-                "Tenés la {cur}. Clippy se cierra y vuelve a abrir solo.",
-                "You have {cur}. Clippy closes and reopens by itself.",
-                "Você tem a {cur}. O Clippy fecha e abre de novo sozinho."
+                "Tenés la {cur}. Recorddy se cierra y vuelve a abrir solo.",
+                "You have {cur}. Recorddy closes and reopens by itself.",
+                "Você tem a {cur}. O Recorddy fecha e abre de novo sozinho."
             );
             let title = trf!("Actualizar a la {v}", "Update to {v}", "Atualizar para a {v}");
             let x = notes_modal(ctx, "confirm_update", &title, &sub, text.as_deref(), |ui| {

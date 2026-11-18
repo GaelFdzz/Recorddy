@@ -1,4 +1,4 @@
-//! Configuración persistente (%APPDATA%\Clippy\config.json).
+//! Configuración persistente (%APPDATA%\Recorddy\config.json).
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -292,6 +292,22 @@ pub fn exists() -> bool {
 
 /// Lee config.json y aplica su idioma a este proceso (así cada ventana y la bandeja lo siguen al recargar).
 pub fn load() -> Config {
+    // Migración no destructiva: solo copia la configuración anterior la primera vez.
+    // No mueve ni elimina videos, y nunca sobrescribe la configuración de Recorddy.
+    let new_path = config_path();
+    if !new_path.exists() {
+        if let Some(roaming) = std::env::var_os("APPDATA") {
+            let old_path = PathBuf::from(roaming).join("Clippy").join("config.json");
+            if old_path.is_file() {
+                if let Some(dir) = new_path.parent() {
+                    if std::fs::create_dir_all(dir).is_ok() {
+                        let _ = std::fs::copy(old_path, &new_path);
+                    }
+                }
+            }
+        }
+    }
+
     let mut cfg: Config = std::fs::read_to_string(config_path())
         .ok()
         .and_then(|s| serde_json::from_str(s.trim_start_matches('\u{feff}')).ok())
@@ -318,7 +334,7 @@ fn default_output_dir() -> PathBuf {
             let s = p.to_string().ok();
             CoTaskMemFree(Some(p.0 as *const _));
             if let Some(s) = s {
-                return PathBuf::from(s).join("Clippy");
+                return PathBuf::from(s).join("Recorddy");
             }
         }
     }
@@ -326,5 +342,5 @@ fn default_output_dir() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_default()
         .join("Videos")
-        .join("Clippy")
+        .join("Recorddy")
 }

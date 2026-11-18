@@ -1,4 +1,4 @@
-//! Editor de clips estilo CapCut (proceso aparte: `clippy.exe --editor`).
+//! Editor de clips estilo CapCut (proceso aparte: `recorddy.exe --editor`).
 //! Biblioteca a la izquierda, vista previa al centro, ajustes del clip a la derecha y
 //! línea de tiempo abajo con pistas de video (miniaturas) y de audio (forma de onda).
 //! Al cerrar la ventana el proceso termina.
@@ -420,9 +420,9 @@ impl EditorApp {
         let mut done = false;
         let subtitle = match tab {
             HelpTab::Keys => tr!(
-                "Tocá un atajo para cambiarlo. Los que funcionan mientras jugás están en la ventana de Clippy.",
-                "Click a shortcut to change it. The ones that work while you play are in the Clippy window.",
-                "Clique em um atalho para mudá-lo. Os que funcionam enquanto você joga estão na janela do Clippy."
+                "Tocá un atajo para cambiarlo. Los que funcionan mientras jugás están en la ventana de Recorddy.",
+                "Click a shortcut to change it. The ones that work while you play are in the Recorddy window.",
+                "Clique em um atalho para mudá-lo. Os que funcionam enquanto você joga estão na janela do Recorddy."
             ),
             HelpTab::Guide => tr!("Lo que conviene saber para editar rápido.", "What's worth knowing to edit fast.", "O que vale saber para editar rápido."),
         };

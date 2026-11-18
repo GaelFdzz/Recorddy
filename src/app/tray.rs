@@ -91,7 +91,7 @@ pub fn run(background: bool) {
         let Ok(hwnd) = CreateWindowExW(
             WS_EX_TOOLWINDOW,
             TRAY_CLASS,
-            w!("ClippyHost"),
+            w!("RecorddyHost"),
             WS_OVERLAPPED,
             0,
             0,
@@ -123,17 +123,17 @@ pub fn run(background: bool) {
         status::save(&app.status);
         APP.with(|a| *a.borrow_mut() = Some(app));
         with_app(|a| a.apply(cfg.clone(), true));
-        log("Clippy iniciado");
+        log("Recorddy iniciado");
         if first_run {
             let key = hotkey_name(cfg.hotkey_vk, cfg.hotkey_mods);
             with_app(|a| {
                 let secs = fmt_secs(cfg.seconds);
                 a.balloon(
-                    tr!("Clippy está grabando", "Clippy is recording", "O Clippy está gravando"),
+                    tr!("Recorddy está grabando", "Recorddy is recording", "O Recorddy está gravando"),
                     &trf!(
-                        "Apretá {key} para guardar los últimos {secs}. Clippy queda acá, en la bandeja.",
-                        "Press {key} to save the last {secs}. Clippy stays here, in the tray.",
-                        "Aperte {key} para salvar os últimos {secs}. O Clippy fica aqui, na bandeja."
+                        "Apretá {key} para guardar los últimos {secs}. Recorddy queda acá, en la bandeja.",
+                        "Press {key} to save the last {secs}. Recorddy stays here, in the tray.",
+                        "Aperte {key} para salvar os últimos {secs}. O Recorddy fica aqui, na bandeja."
                     ),
                     false,
                 )
@@ -233,7 +233,7 @@ impl App {
 
     fn tip(&self) -> String {
         if let Some(e) = &self.status.error {
-            return trf!("Clippy · error: {e}", "Clippy · error: {e}", "Clippy · erro: {e}");
+            return trf!("Recorddy · error: {e}", "Recorddy · error: {e}", "Recorddy · erro: {e}");
         }
         if self.cfg.continuous_mode && matches!(self.continuous, ContinuousStatus::Starting | ContinuousStatus::Recording | ContinuousStatus::Finishing) {
             return match self.continuous {
@@ -248,13 +248,13 @@ impl App {
         }
         if self.cfg.enabled {
             let (key, secs) = (hotkey_name(self.cfg.hotkey_vk, self.cfg.hotkey_mods), fmt_secs(self.cfg.seconds));
-            let mut t = trf!("Clippy · grabando · {key} guarda {secs}", "Clippy · recording · {key} saves {secs}", "Clippy · gravando · {key} salva {secs}");
+            let mut t = trf!("Recorddy · grabando · {key} guarda {secs}", "Recorddy · recording · {key} saves {secs}", "Recorddy · gravando · {key} salva {secs}");
             if let Some(g) = &self.game {
                 t.push_str(&trf!(" · juego: {g}", " · game: {g}", " · jogo: {g}"));
             }
             t
         } else {
-            tr!("Clippy · pausado", "Clippy · paused", "Clippy · pausado").into()
+            tr!("Recorddy · pausado", "Recorddy · paused", "Recorddy · pausado").into()
         }
     }
 
@@ -373,7 +373,7 @@ impl App {
                 self.tray(NIM_MODIFY);
                 if new {
                     self.balloon(
-                        tr!("Clippy no puede grabar", "Clippy can't record", "O Clippy não consegue gravar"),
+                        tr!("Recorddy no puede grabar", "Recorddy can't record", "O Recorddy não consegue gravar"),
                         &trf!("{e}\nSe reintenta solo.", "{e}\nIt retries by itself.", "{e}\nEle tenta de novo sozinho."),
                         true,
                     );
@@ -445,7 +445,7 @@ fn show_menu(hwnd: HWND) {
         let _ = AppendMenuW(menu, MF_STRING | check, ID_TOGGLE, &item("Grabar clips"));
         let mic = with_app(|a| a.cfg.mic_audio).unwrap_or(false);
         let _ = AppendMenuW(menu, MF_STRING | if mic { MF_CHECKED } else { MF_UNCHECKED }, ID_MIC, &item(tr!("Micrófono", "Microphone", "Microfone")));
-        let _ = AppendMenuW(menu, MF_STRING, ID_SETTINGS, &item(tr!("Abrir Clippy", "Open Clippy", "Abrir Clippy")));
+        let _ = AppendMenuW(menu, MF_STRING, ID_SETTINGS, &item(tr!("Abrir Recorddy", "Open Recorddy", "Abrir Recorddy")));
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
         let _ = AppendMenuW(menu, MF_STRING, ID_EXIT, &item(tr!("Salir", "Quit", "Sair")));
 
@@ -521,7 +521,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             if let Some((v, _)) = update::available() {
                 with_app(|a| {
                     a.balloon(
-                        tr!("Hay una versión nueva de Clippy", "A new version of Clippy is out", "Há uma nova versão do Clippy"),
+                        tr!("Hay una versión nueva de Recorddy", "A new version of Recorddy is out", "Há uma nova versão do Recorddy"),
                         &trf!(
                             "La versión {v} está lista. Tocá acá para actualizar.",
                             "Version {v} is ready. Click here to update.",
@@ -558,7 +558,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         // wparam 0: se canceló el apagado de Windows, así que se sigue grabando.
         WM_ENDSESSION if wp.0 == 0 => LRESULT(0),
         WM_CLOSE | WM_ENDSESSION => {
-            // `taskkill /IM Clippy.exe` o apagado de Windows: salir prolijo.
+            // `taskkill /IM Recorddy.exe` o apagado de Windows: salir prolijo.
             with_app(|a| a.quit());
             LRESULT(0)
         }

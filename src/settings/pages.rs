@@ -32,7 +32,7 @@ impl SettingsApp {
     pub(super) fn nav(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             app_mark(ui, 28.0);
-            ui.label(RichText::new("Clippy").family(bold()).size(20.0).color(TEXT));
+            ui.label(RichText::new("Recorddy").family(bold()).size(20.0).color(TEXT));
         });
         ui.add_space(16.0);
 
@@ -74,7 +74,7 @@ impl SettingsApp {
                     });
                 });
                 let sub = if let Some(e) = error {
-                    trf!("{e} Clippy vuelve a intentar solo.", "{e} Clippy keeps trying by itself.", "{e} O Clippy tenta de novo sozinho.")
+                    trf!("{e} Recorddy vuelve a intentar solo.", "{e} Recorddy keeps trying by itself.", "{e} O Recorddy tenta de novo sozinho.")
                 } else if self.cfg.enabled && self.cfg.continuous_mode {
                     "Grabación continua activa · utiliza el interruptor para detenerla".into()
                 } else if self.cfg.enabled {
@@ -106,7 +106,7 @@ impl SettingsApp {
         }
 
         ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-            if wide_button(ui, tr!("Salir de Clippy", "Quit Clippy", "Sair do Clippy"), Kind::Danger, 36.0)
+            if wide_button(ui, tr!("Salir de Recorddy", "Quit Recorddy", "Sair do Recorddy"), Kind::Danger, 36.0)
                 .on_hover_text(tr!("Deja de grabar y cierra todo", "Stops recording and closes everything", "Para de gravar e fecha tudo"))
                 .clicked()
             {
@@ -243,7 +243,7 @@ impl SettingsApp {
     pub(super) fn about_section(&mut self, ui: &mut egui::Ui) {
         section(ui, tr!("Acerca de", "About", "Sobre"), |ui| {
             row(ui, tr!("Versión", "Version", "Versão"), LABEL_W, |ui| {
-                ui.label(RichText::new(format!("Clippy {}", env!("CARGO_PKG_VERSION"))).color(TEXT));
+                ui.label(RichText::new(format!("Recorddy {}", env!("CARGO_PKG_VERSION"))).color(TEXT));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.label(RichText::new(tr!(
                         "Versión local · sin actualizaciones automáticas",
@@ -287,9 +287,9 @@ impl SettingsApp {
                 ui,
                 LABEL_W + 8.0,
                 trf!(
-                    "Tu placa de video no tiene codificador de video o no se pudo usar, así que Clippy usa el procesador y graba hasta {p}p a {fps} cuadros por segundo para no frenar el juego.",
-                    "Your graphics card has no video encoder or it couldn't be used, so Clippy uses the processor and records up to {p}p at {fps} frames per second so it doesn't slow down your game.",
-                    "Sua placa de vídeo não tem codificador de vídeo ou ele não pôde ser usado, então o Clippy usa o processador e grava até {p}p a {fps} quadros por segundo para não deixar o jogo lento."
+                    "Tu placa de video no tiene codificador de video o no se pudo usar, así que Recorddy usa el procesador y graba hasta {p}p a {fps} cuadros por segundo para no frenar el juego.",
+                    "Your graphics card has no video encoder or it couldn't be used, so Recorddy uses the processor and records up to {p}p at {fps} frames per second so it doesn't slow down your game.",
+                    "Sua placa de vídeo não tem codificador de vídeo ou ele não pôde ser usado, então o Recorddy usa o processador e grava até {p}p a {fps} quadros por segundo para não deixar o jogo lento."
                 ),
             );
         }
