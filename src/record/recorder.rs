@@ -12,6 +12,7 @@ use windows::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THR
 
 use super::audio::{self, Audio, AudioBuf, Source};
 use super::capture::{Aim, Capture};
+use super::cadence::Cadence;
 use super::clock::{now_100ns, Timer};
 use super::convert::Converter;
 use super::continuous::ContinuousMux;
@@ -178,6 +179,8 @@ impl ContinuousSession {
 
 fn continuous_worker(rx: Receiver<ContinuousMessage>, path: std::path::PathBuf, with_audio: bool, notify: Notify) {
     let mut mux: Option<ContinuousMux> = None;
+    let mut cadence = Cadence::default();
+    let mut nominal_frame_dur = 0i64;
     let result: Result<()> = (|| {
         for msg in rx {
             match msg {
@@ -188,6 +191,8 @@ fn continuous_worker(rx: Receiver<ContinuousMessage>, path: std::path::PathBuf, 
                         notify(Event::ContinuousStarted(path.clone()));
                     }
                     mux.as_mut().unwrap().write_video(&packet, frame_dur)?;
+                    cadence.observe(packet.pts, frame_dur);
+                    nominal_frame_dur = frame_dur;
                 }
                 ContinuousMessage::Audio(data, frame) => {
                     if let Some(m) = mux.as_mut() { m.write_audio(&data, frame)?; }
@@ -196,7 +201,10 @@ fn continuous_worker(rx: Receiver<ContinuousMessage>, path: std::path::PathBuf, 
         }
         if let Some(m) = mux.take() {
             let saved = m.finish()?;
-            notify(Event::ContinuousSaved(saved));
+            if nominal_frame_dur > 0 {
+                log(&format!("diagnóstico temporal (grabación continua, {}): {}", saved.display(), cadence.report(nominal_frame_dur)));
+            }
+            notify(Event::ContinuousSaved(saved.clone()));
         } else {
             // No se llegó a escribir un fotograma clave: no existe MP4 que guardar.
             notify(Event::ContinuousFailed("Grabación detenida antes del primer fotograma clave".into()));
@@ -406,10 +414,10 @@ fn session(
     let (w, h, fps) = (enc.width, enc.height, enc.fps);
     let frame_dur = 10_000_000i64 / fps as i64;
     *untested = Some((w, h));
-    // Prueba (CLIPPY_TEST_ALIGN16): un encoder que, como Quick Sync, falla en el primer cuadro si el tamaño no
+    // Prueba (RECORDDY_TEST_ALIGN16): un encoder que, como Quick Sync, falla en el primer cuadro si el tamaño no
     // es múltiplo de 16.
     #[cfg(feature = "devtools")]
-    let reject = std::env::var_os("CLIPPY_TEST_ALIGN16").is_some() && align16((w, h)) != (w, h);
+    let reject = std::env::var_os("RECORDDY_TEST_ALIGN16").is_some() && align16((w, h)) != (w, h);
     log(&format!(
         "grabando {} a {w}x{h} @ {fps} fps, H.264 {} Mbps, buffer {} s (máximo en esta PC: {} s), encoder: {}",
         cap.describe(),
@@ -439,6 +447,10 @@ fn session(
     let mut probe_at: Option<i64> = None;
     au.sync(cfg, 0);
     let mut next_frame = 0i64;
+    let mut diag_start = 0i64;
+    let mut diag_attempts = 0u64;
+    let mut diag_encoder_busy = 0u64;
+    let mut diag_late_slots = 0u64;
     let mut packets: VecDeque<Packet> = VecDeque::new();
     let mut out = Vec::new();
     let mut continuous: Option<ContinuousSession> = None;
@@ -536,6 +548,8 @@ fn session(
         }
 
         if now >= next_frame {
+            diag_attempts += 1;
+            diag_late_slots += ((now - next_frame) / frame_dur).max(0) as u64;
             let pts = (now / frame_dur) * frame_dur;
             let visible = cfg.capture_mode == CaptureMode::Screen || au.game.visible();
             if let Some(c) = conv.as_mut() {
@@ -551,9 +565,21 @@ fn session(
                         anyhow::bail!("encoder de prueba: {w}x{h} no es múltiplo de 16 (0x80004005)");
                     }
                     enc.feed(&tex, pts, frame_dur)?;
+                } else {
+                    diag_encoder_busy += 1;
                 }
             }
             next_frame = pts + frame_dur;
+        }
+
+        // Solo una línea cada 10 segundos: sin I/O ni asignaciones por fotograma.
+        if now - diag_start >= 100_000_000 {
+            log(&format!("diagnóstico captura (últimos {:.1} s): ciclos {}, slots atrasados {}, encoder ocupado {}; no mide fotogramas visualmente duplicados",
+                (now - diag_start) as f64 / 10_000_000.0, diag_attempts, diag_late_slots, diag_encoder_busy));
+            diag_start = now;
+            diag_attempts = 0;
+            diag_late_slots = 0;
+            diag_encoder_busy = 0;
         }
 
         trim_video(&mut packets, now - keep);
@@ -640,6 +666,7 @@ fn save_clip(cfg: &Config, packets: &VecDeque<Packet>, enc: &Encoder, au: &Audio
     let Some(start) = start else { return fail(no_video()) };
     let pk: Vec<Packet> = packets.iter().skip(start).cloned().collect();
     log(&format!("clip: {} cuadros, {} fotogramas clave", pk.len(), pk.iter().filter(|p| p.key).count()));
+    let cadence_report = Cadence::from_packets(pk.iter(), frame_dur).report(frame_dur);
     let base = pk[0].pts;
     let end = pk.last().map_or(base, |p| p.pts) + frame_dur;
     let audio = cfg.audio_on().then(|| mixed_audio(cfg, au, frames_at(base), frames_at(end)));
@@ -665,7 +692,8 @@ fn save_clip(cfg: &Config, packets: &VecDeque<Packet>, enc: &Encoder, au: &Audio
     std::thread::spawn(move || match mux::write(job) {
         Ok(p) => {
             log(&format!("clip guardado: {}", p.display()));
-            notify(Event::Saved(p));
+            log(&format!("diagnóstico temporal (clip, {}): {}", p.display(), cadence_report));
+            notify(Event::Saved(p.clone()));
         }
         Err(e) => {
             log(&format!("no se pudo guardar el clip: {e:?}"));

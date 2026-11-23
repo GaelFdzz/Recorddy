@@ -1,6 +1,6 @@
 ---
 name: Algo no anda
-about: Clippy no graba, el clip sale mal o una ventana falla
+about: Recorddy no graba, el clip sale mal o una ventana falla
 labels: bug
 ---
 
@@ -12,10 +12,10 @@ labels: bug
 <!-- Qué se esperaba y qué pasó, en una o dos frases. -->
 
 - **Equipo**: placa de video, monitores y resolución, Windows
-- **Versión de Clippy**:
+- **Versión de Recorddy**:
 
 ```text
-Las líneas relevantes de %APPDATA%\Clippy\clippy.log
+Las líneas relevantes de %APPDATA%\Recorddy\recorddy.log
 ```
 
 ## Cómo reproducirlo

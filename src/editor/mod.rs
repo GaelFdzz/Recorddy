@@ -12,6 +12,8 @@ mod prefs;
 mod preview;
 mod shortcuts;
 mod export;
+mod smooth_motion;
+mod export_backend;
 mod panels;
 mod playback;
 mod timeline;
@@ -147,6 +149,12 @@ impl eframe::App for EditorApp {
             self.scan();
         }
         self.poll_export();
+        // Al cerrar durante una exportación, seguir atendiendo eventos hasta que el trabajador
+        // haya terminado los procesos externos y limpiado sus temporales.
+        if self.allow_close && self.job.is_none() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
         self.shortcuts(ctx);
         self.tick();
         self.update_texture();
@@ -541,9 +549,9 @@ impl EditorApp {
     /// Si hay cambios sin exportar (o se está exportando), preguntar antes de cerrar.
     fn close_guard(&mut self, ctx: &egui::Context) {
         let risky = (self.dirty && !self.is_empty()) || self.job.is_some();
-        if ctx.input(|i| i.viewport().close_requested()) && risky && !self.allow_close {
+        if ctx.input(|i| i.viewport().close_requested()) && risky && (!self.allow_close || self.job.is_some()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            self.confirm_close = true;
+            if !self.allow_close { self.confirm_close = true; }
         }
         if !self.confirm_close {
             return;
@@ -594,7 +602,7 @@ impl EditorApp {
                 }
                 self.allow_close = true;
                 self.confirm_close = false;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                if self.job.is_none() { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
             }
             3 => {
                 self.confirm_close = false;

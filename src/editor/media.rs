@@ -11,6 +11,7 @@ use std::mem::ManuallyDrop;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Result};
 use windows::core::{Interface, HSTRING, GUID, PROPVARIANT};
@@ -29,6 +30,10 @@ pub const AUDIO: u32 = MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32;
 pub const ANY: u32 = MF_SOURCE_READER_ANY_STREAM.0 as u32;
 pub const SOURCE: u32 = MF_SOURCE_READER_MEDIASOURCE.0 as u32;
 pub const EOS: u32 = MF_SOURCE_READERF_ENDOFSTREAM.0 as u32;
+
+/// Carpetas privadas de exportación: la biblioteca nunca muestra sus MP4 todavía incompletos.
+pub(super) const EXPORT_WORK_PREFIX: &str = ".recorddy-export-";
+pub(super) const EXPORT_TEMP_EXTENSION: &str = "recorddy-tmp.mp4";
 
 /// `low_latency`: el decodificador entrega cada cuadro apenas lo tiene (para cuadros sueltos).
 pub unsafe fn reader(path: &Path, video_processing: bool, d3d: Option<&IMFDXGIDeviceManager>, low_latency: bool) -> Result<IMFSourceReader> {
@@ -475,7 +480,7 @@ impl Edit {
     }
 
     /// Lo que suena es justo el audio de `parts`, sin cambios: se puede copiar tal cual.
-    fn plain_audio(&self, parts: &[Clip]) -> bool {
+    pub(super) fn plain_audio(&self, parts: &[Clip]) -> bool {
         let same = |a: &Clip, v: &Clip| {
             a.path == v.path
                 && (a.start, a.src_in, a.len, a.fade, a.xfade) == (v.start, v.src_in, v.len, (0, 0), (0, 0))
@@ -521,25 +526,72 @@ pub fn layers(video: &[Vec<Clip>], t: i64) -> Vec<(usize, usize, f32)> {
 
 pub struct Progress {
     bits: AtomicU32,
+    range_start: AtomicU32,
+    range_span: AtomicU32,
     pub cancel: AtomicBool,
     pub result: Mutex<Option<Result<String, String>>>,
+    stage: Mutex<String>,
+    started: Instant,
+    protect_capture: AtomicBool,
+    capture_checked: Mutex<Option<Instant>>,
 }
 
 impl Progress {
     pub fn new() -> Self {
-        Self { bits: AtomicU32::new(0), cancel: AtomicBool::new(false), result: Mutex::new(None) }
+        Self { bits: AtomicU32::new(0), range_start: AtomicU32::new(0), range_span: AtomicU32::new(1.0f32.to_bits()), cancel: AtomicBool::new(false), result: Mutex::new(None), stage: Mutex::new(String::new()), started: Instant::now(), protect_capture: AtomicBool::new(false), capture_checked: Mutex::new(None) }
     }
     pub fn get(&self) -> f32 {
         f32::from_bits(self.bits.load(Ordering::Relaxed))
     }
-    fn set(&self, v: f32) {
-        self.bits.store(v.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
+    pub(super) fn set(&self, v: f32) {
+        let start = f32::from_bits(self.range_start.load(Ordering::Relaxed));
+        let span = f32::from_bits(self.range_span.load(Ordering::Relaxed));
+        self.bits.store((start + span * v.clamp(0.0, 1.0)).clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
     }
-    fn check(&self) -> Result<()> {
+    pub(super) fn range(&self, start: f32, span: f32) {
+        self.range_start.store(start.to_bits(), Ordering::Relaxed);
+        self.range_span.store(span.to_bits(), Ordering::Relaxed);
+        self.set(0.0);
+    }
+    pub(super) fn check(&self) -> Result<()> {
         if self.cancel.load(Ordering::Relaxed) {
-            bail!("cancelado");
+            bail!(tr!("exportación cancelada", "export canceled", "exportação cancelada"));
+        }
+        if self.protect_capture.load(Ordering::Relaxed) {
+            let mut checked = self.capture_checked.lock().unwrap();
+            if checked.is_none_or(|t| t.elapsed() >= Duration::from_millis(200)) {
+                *checked = Some(Instant::now());
+                // La preferencia cubre también el arranque, antes de recibir Event::Started.
+                // Si no se puede leer mientras la bandeja está abierta, priorizar la captura.
+                let capture = crate::app::mode::tray_running() && (
+                    crate::app::status::load().device.is_some()
+                    || std::fs::read_to_string(crate::config::config_path()).ok()
+                        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                        .and_then(|cfg| cfg.get("enabled").and_then(serde_json::Value::as_bool))
+                        .unwrap_or(true)
+                );
+                if capture {
+                    bail!(tr!(
+                        "Se detuvo Smooth Motion para priorizar la captura. Pausá la grabación y volvé a exportar.",
+                        "Smooth Motion stopped to prioritize capture. Pause recording and export again.",
+                        "O Smooth Motion parou para priorizar a captura. Pause a gravação e exporte novamente."
+                    ));
+                }
+            }
         }
         Ok(())
+    }
+    pub(super) fn protect_capture(&self) {
+        self.protect_capture.store(true, Ordering::Relaxed);
+    }
+    pub(super) fn stage(&self, name: &str) {
+        *self.stage.lock().unwrap() = name.to_string();
+    }
+    pub(super) fn label(&self) -> String {
+        let elapsed = crate::ui_kit::theme::fmt_time((self.started.elapsed().as_secs_f64() * 1e7) as i64);
+        let stage = self.stage.lock().unwrap();
+        let stage = if stage.is_empty() { tr!("Exportando", "Exporting", "Exportando") } else { stage.as_str() };
+        trf!("{stage} · {:.0}% · {elapsed}", "{stage} · {:.0}% · {elapsed}", "{stage} · {:.0}% · {elapsed}", self.get() * 100.0)
     }
 }
 
@@ -579,7 +631,7 @@ pub fn export(edit: &Edit, out: &Path, opts: &ExportOpts, prog: &Progress) -> Re
     if let Some(dir) = out.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let tmp = out.with_extension("clippy-tmp.mp4");
+    let tmp = out.with_extension(EXPORT_TEMP_EXTENSION);
     let _ = std::fs::remove_file(&tmp);
     let r = (|| unsafe {
         let mut probes = HashMap::new();
@@ -618,8 +670,8 @@ pub fn export(edit: &Edit, out: &Path, opts: &ExportOpts, prog: &Progress) -> Re
             tr!("renderizado con la GPU", "rendered on the GPU", "renderizado na GPU")
         };
         // Todo en la GPU; si esa placa o ese archivo no se dejan, se decodifica por CPU (con devtools,
-        // CLIPPY_CPU=1 fuerza ese camino para probarlo).
-        let gpu = d3d_manager().ok().filter(|_| !cfg!(feature = "devtools") || std::env::var_os("CLIPPY_CPU").is_none());
+        // RECORDDY_CPU=1 fuerza ese camino para probarlo).
+        let gpu = d3d_manager().ok().filter(|_| !cfg!(feature = "devtools") || std::env::var_os("RECORDDY_CPU").is_none());
         match gpu {
             Some(m) => export_reencode(&edit, &probes, &tmp, opts, prog, Some(&m)).or_else(|e| {
                 prog.check()?;

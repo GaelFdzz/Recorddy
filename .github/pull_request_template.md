@@ -3,7 +3,7 @@
 
 ## Qué
 
-<!-- 2 a 5 bullets: qué cambia para quien usa Clippy. Sin detalles que ya muestra el diff. -->
+<!-- 2 a 5 bullets: qué cambia para quien usa Recorddy. Sin detalles que ya muestra el diff. -->
 
 -
 

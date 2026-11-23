@@ -20,18 +20,18 @@ fn secs(s: &str) -> i64 {
     (s.parse::<f64>().unwrap_or(0.0) * 1e7) as i64
 }
 
-/// Con CLIPPY_FRAME="cuartos,espejo,izq,arriba,der,abajo,encaje" (ej. "1,1,0,0,0.5,1,0"; encaje 0 entera,
+/// Con RECORDDY_FRAME="cuartos,espejo,izq,arriba,der,abajo,encaje" (ej. "1,1,0,0,0.5,1,0"; encaje 0 entera,
 /// 1 llenar, 2 estirar), la imagen de todas las piezas girada, espejada, recortada y encajada así.
 fn test_frame() -> Frame {
-    let Ok(v) = std::env::var("CLIPPY_FRAME") else { return Frame::default() };
+    let Ok(v) = std::env::var("RECORDDY_FRAME") else { return Frame::default() };
     let n: Vec<f32> = v.split(',').map(|x| x.trim().parse().unwrap_or(0.0)).collect();
     let at = |i: usize, d: f32| n.get(i).copied().unwrap_or(d);
     Frame { turns: at(0, 0.0) as u8, flip: at(1, 0.0) != 0.0, crop: [at(2, 0.0), at(3, 0.0), at(4, 1.0), at(5, 1.0)], sizing: [Sizing::Whole, Sizing::Fill, Sizing::Stretch][(at(6, 0.0) as usize).min(2)] }
 }
 
-/// Con CLIPPY_RATIO="9:16", el lienzo con esa proporción.
+/// Con RECORDDY_RATIO="9:16", el lienzo con esa proporción.
 fn test_ratio() -> Option<media::Ratio> {
-    let v = std::env::var("CLIPPY_RATIO").ok()?;
+    let v = std::env::var("RECORDDY_RATIO").ok()?;
     let (w, h) = v.split_once(':')?;
     Some((w.parse().ok()?, h.parse().ok()?))
 }
@@ -54,8 +54,8 @@ fn parts(args: &[String]) -> BTreeMap<String, Vec<Clip>> {
         let fade = (tok.next().map_or(0, secs), tok.next().map_or(0, secs));
         let start = at.unwrap_or_else(|| tracks.get(&names[0]).and_then(|l| l.last()).map_or(0, Clip::end));
         for n in names {
-            // Con CLIPPY_SPEED, todas a esa velocidad (el mismo tramo del archivo dura menos o más).
-            let speed: f64 = std::env::var("CLIPPY_SPEED").ok().and_then(|v| v.parse().ok()).unwrap_or(1.0);
+            // Con RECORDDY_SPEED, todas a esa velocidad (el mismo tramo del archivo dura menos o más).
+            let speed: f64 = std::env::var("RECORDDY_SPEED").ok().and_then(|v| v.parse().ok()).unwrap_or(1.0);
             let src_in = secs(&c[2]);
             let len = if speed > 0.0 { ((secs(&c[3]) - src_in) as f64 / speed) as i64 } else { secs(&c[3]) - src_in };
             let frame = test_frame();
@@ -74,10 +74,10 @@ fn parts(args: &[String]) -> BTreeMap<String, Vec<Clip>> {
 }
 
 impl EditorApp {
-    /// Con `CLIPPY_TEST_TIMELINE` (las mismas partes que `--test-export`, con `|` entre cada dato) el editor
+    /// Con `RECORDDY_TEST_TIMELINE` (las mismas partes que `--test-export`, con `|` entre cada dato) el editor
     /// arranca con esa línea de tiempo: para sacar capturas sin tocar el mouse.
     pub(super) fn load_test_timeline(&mut self) {
-        let Ok(spec) = std::env::var("CLIPPY_TEST_TIMELINE") else { return };
+        let Ok(spec) = std::env::var("RECORDDY_TEST_TIMELINE") else { return };
         let args: Vec<String> = spec.split('|').map(str::to_string).collect();
         let tracks = parts(&args);
         let shared = |id: u64| tracks.values().flatten().filter(|c| c.id == id).count() > 1;
@@ -123,7 +123,7 @@ pub fn test_cli(args: &[String]) -> i32 {
                 }
             }
             let cfg = crate::config::load();
-            let target = std::env::var("CLIPPY_TARGET").ok().map(|v| {
+            let target = std::env::var("RECORDDY_TARGET").ok().map(|v| {
                 let p: Vec<&str> = v.split(',').collect();
                 media::Target {
                     height: p.first().and_then(|x| x.parse().ok()).unwrap_or(0),
@@ -134,7 +134,21 @@ pub fn test_cli(args: &[String]) -> i32 {
             });
             let opts = media::ExportOpts { bitrate: cfg.bitrate_mbps * 1_000_000, target };
             let t = Instant::now();
-            match media::export(&edit, &out, &opts, &Progress::new()) {
+            let progress = std::sync::Arc::new(Progress::new());
+            if let Ok(ms) = std::env::var("RECORDDY_CANCEL_AFTER_MS").unwrap_or_default().parse::<u64>() {
+                let progress = progress.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(ms));
+                    progress.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+                });
+            }
+            let result = if std::env::var_os("RECORDDY_SMOOTH_COMPARE").is_some() {
+                super::smooth_motion::compare(&edit, &out, &opts, &progress).map(|_| "comparación A/B/C".to_string())
+            } else {
+                let mode = std::env::var("RECORDDY_SMOOTH").ok().and_then(|s| s.parse::<u8>().ok()).unwrap_or(0);
+                super::smooth_motion::export(&edit, &out, &opts, mode.into(), &progress)
+            };
+            match result {
                 Ok(m) => {
                     println!("OK {m} en {:.2} s", t.elapsed().as_secs_f64());
                     0
