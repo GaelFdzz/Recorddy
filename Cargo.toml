@@ -3,7 +3,7 @@ name = "recorddy"
 version = "0.4.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
-description = "Grabadora de clips y sesiones continuas para Windows, derivada de Clippy"
+description = "Grabadora de clips y sesiones continuas para Windows"
 
 [dependencies]
 anyhow = "1"

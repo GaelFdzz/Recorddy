@@ -1,0 +1,32 @@
+FFmpeg incluido como herramienta externa opcional para la exportación Smooth Motion.
+
+Proyecto: https://ffmpeg.org/
+Compilación Windows: https://www.gyan.dev/ffmpeg/builds/
+Código fuente y licencias: https://ffmpeg.org/download.html
+Información legal: https://ffmpeg.org/legal.html
+
+La compilación «release essentials» utilizada aquí está publicada bajo GPLv3 e
+incluye componentes sujetos a sus propias condiciones. La distribución debe
+acompañar los avisos de derechos de autor, las licencias aplicables y el acceso
+al código fuente correspondiente exigido por dichas licencias. La inclusión
+de los enlaces anteriores por sí sola no garantiza cumplir todas las obligaciones.
+
+RIFE-ncnn-vulkan es una herramienta externa opcional, ejecutada solo al exportar.
+Proyecto y código fuente: https://github.com/nihui/rife-ncnn-vulkan
+Licencia de la implementación: MIT (Copyright 2020 nihui).
+El paquete debe conservar tools/rife/LICENSE y las licencias de sus componentes.
+Proyecto del modelo RIFE: https://github.com/hzwer/ECCV2022-RIFE (licencia MIT).
+Smooth Social 60 experimental utiliza específicamente el modelo rife-v4.6.
+La licencia del código no sustituye verificar la procedencia y los términos de los
+pesos concretos que se distribuyen. El descargador del ZIP antiguo de RIFE
+todavía no verifica un SHA-256 anclado.
+Esta implementación local no publica ni certifica una nueva distribución.
+
+El auxiliar recorddy-rife-stream se compila por separado con las mismas fuentes
+RIFE 20221029, ncnn y glslang fijadas en native/rife-stream/sources.lock.json.
+El preparador verifica SHA-256 de esas fuentes antes de compilar; copia sus
+licencias completas junto al auxiliar. Conservá los archivos recorddy-stream-*
+y recorddy-rife-stream-sources.json en tools/rife al distribuir la carpeta.
+Vulkan usa el cargador del driver instalado en cada PC, nunca una DLL del driver
+de la PC de desarrollo. MSVC, CMake y Python solo se necesitan para construir
+el auxiliar; el usuario final recibe el ejecutable portable y sus herramientas.

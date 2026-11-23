@@ -48,4 +48,8 @@ fn main() {
     let mut rc = std::fs::File::create(&rc_path).unwrap();
     writeln!(rc, "1 ICON \"{}\"", ico_path.display().to_string().replace('\\', "\\\\")).unwrap();
     embed_resource::compile(&rc_path, embed_resource::NONE);
+
+    // FFmpeg se incorpora durante el empaquetado, no durante `cargo check`.
+    // Mantener la compilación libre de descargas también permite trabajar sin Internet.
+    // `scripts/package.ps1` prepara y verifica el binario portátil antes de distribuir.
 }

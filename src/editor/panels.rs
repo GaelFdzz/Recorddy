@@ -288,7 +288,7 @@ impl EditorApp {
                             .desired_width(240.0)
                             .desired_height(32.0)
                             .rounding(6.0)
-                            .text(RichText::new(trf!("Exportando… {:.0}%", "Exporting… {:.0}%", "Exportando… {:.0}%", p * 100.0)).color(BLACK)),
+                            .text(RichText::new(job.progress.label()).color(BLACK)),
                     );
                 } else {
                     let enabled = !self.is_empty();

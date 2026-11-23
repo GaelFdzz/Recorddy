@@ -2,6 +2,7 @@
 
 pub mod audio;
 mod capture;
+mod cadence;
 pub mod clock;
 mod convert;
 mod continuous;

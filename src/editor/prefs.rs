@@ -1,4 +1,4 @@
-//! Preferencias propias del editor (%APPDATA%\Clippy\editor.json): atajos de teclado, últimas
+//! Preferencias propias del editor (%APPDATA%\Recorddy\editor.json): atajos de teclado, últimas
 //! opciones de exportación, tamaño de los paneles y el imán. Solo el editor las lee y las escribe.
 
 use std::path::{Path, PathBuf};
@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::export::Quality;
 use super::shortcuts::Keys;
+use super::smooth_motion::Smooth;
 use crate::log::app_dir;
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
@@ -20,6 +21,8 @@ pub(super) struct Prefs {
     pub(super) export_fps: u32,
     pub(super) export_quality: Quality,
     pub(super) export_size_mb: u32,
+    /// Smooth Motion en la exportación (0 = apagado).
+    pub(super) export_smooth: Smooth,
     /// Tamaño de los paneles (puntos), como los dejó el usuario arrastrando sus bordes.
     pub(super) library_w: f32,
     pub(super) props_w: f32,
@@ -38,6 +41,7 @@ impl Default for Prefs {
             export_fps: 0,
             export_quality: Quality::Recommended,
             export_size_mb: 25,
+            export_smooth: Smooth::Original,
             library_w: 320.0,
             props_w: 290.0,
             timeline_h: 268.0,

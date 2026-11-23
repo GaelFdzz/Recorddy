@@ -415,10 +415,10 @@ unsafe fn gpu_encoders(luid: LUID) -> Result<Vec<(IMFActivate, String, Option<St
     Ok(v)
 }
 
-/// Con `devtools`, la variable CLIPPY_CPU_ENCODER hace que no se encuentre ningún encoder en la placa.
+/// Con `devtools`, la variable RECORDDY_CPU_ENCODER hace que no se encuentre ningún encoder en la placa.
 #[cfg(feature = "devtools")]
 fn skip_gpu() -> bool {
-    std::env::var_os("CLIPPY_CPU_ENCODER").is_some()
+    std::env::var_os("RECORDDY_CPU_ENCODER").is_some()
 }
 
 #[cfg(not(feature = "devtools"))]

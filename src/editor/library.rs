@@ -403,7 +403,9 @@ pub fn is_video(p: &Path) -> bool {
 
 /// Videos de `dir` que se muestran (el archivo temporal de una exportación en curso, no).
 fn videos_in(dir: &Path) -> impl Iterator<Item = PathBuf> {
-    std::fs::read_dir(dir).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| is_video(p) && !p.to_string_lossy().contains("clippy-tmp"))
+    std::fs::read_dir(dir).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| {
+        is_video(p) && !p.file_name().is_some_and(|name| name.to_string_lossy().ends_with(super::media::EXPORT_TEMP_EXTENSION))
+    })
 }
 
 /// Las carpetas de adentro de la de los clips (`root`) y los videos que se ven: en la de los clips (`dir` None), los
@@ -435,7 +437,7 @@ pub fn scan(root: &Path, dir: Option<&Path>, imported: &[PathBuf]) -> (Vec<Folde
     }
     let rd = std::fs::read_dir(root).into_iter().flatten().flatten();
     let mut folders: Vec<Folder> = rd
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()) && !e.file_name().to_string_lossy().starts_with(super::media::EXPORT_WORK_PREFIX))
         .map(|e| Folder { name: e.file_name().to_string_lossy().into_owned(), count: videos_in(&e.path()).count(), path: e.path() })
         .collect();
     folders.sort_by_key(|f| f.name.to_lowercase());
@@ -527,7 +529,7 @@ pub fn folder_name_ok(name: &str) -> bool {
 /// Caracteres que Windows no deja usar en un nombre de archivo o carpeta.
 pub const BAD_NAME: &str = "<>:\"/\\|?*";
 
-/// "Clippy_2026-11-15_23-38-30" -> "15/11 · 23:38:30" (en inglés, "11/15 · 23:38:30")
+/// "Recorddy_2026-11-15_23-38-30" -> "15/11 · 23:38:30" (en inglés, "11/15 · 23:38:30")
 pub fn pretty_name(p: &Path) -> String {
     let stem = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
     if let Some(rest) = stem.strip_prefix("Recorddy_").or_else(|| stem.strip_prefix("Clippy_")) {
@@ -540,4 +542,28 @@ pub fn pretty_name(p: &Path) -> String {
         }
     }
     stem
+}
+
+#[cfg(all(test, feature = "devtools"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn la_biblioteca_oculta_temporales_y_conserva_clips_heredados() {
+        let id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join(format!("recorddy-tmp-biblioteca-{id}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let clip = dir.join("Recorddy_2026-11-22_10-20-30.mp4");
+        let legacy = dir.join("Clippy_2026-11-15_23-38-30.mp4");
+        let temp = clip.with_extension(super::super::media::EXPORT_TEMP_EXTENSION);
+        for file in [&clip, &legacy, &temp] {
+            std::fs::write(file, []).unwrap();
+        }
+        let visible: Vec<_> = videos_in(&dir).collect();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(visible.contains(&clip));
+        assert!(visible.contains(&legacy));
+        assert!(!visible.contains(&temp));
+        assert_eq!(visible.len(), 2);
+    }
 }

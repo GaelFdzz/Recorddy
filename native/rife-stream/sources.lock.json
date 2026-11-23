@@ -1,0 +1,31 @@
+{
+  "rife_tree": "a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7",
+  "src_tree": "d609753b02430ca8c86358739a9e0f8ebab874ed",
+  "modules": {
+    "libwebp": "5abb55823bb6196a918dd87202b2f32bbaff4c18",
+    "ncnn": "b4ba207c18d3103d6df890c0e3a97b469b196b26"
+  },
+  "glslang": "86ff4bca1ddc7e2262f119c16e7228d0efb67610",
+  "archives": [
+    {
+      "name": "rife",
+      "url": "https://codeload.github.com/nihui/rife-ncnn-vulkan/tar.gz/a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7",
+      "sha256": "b5271dfd864ae3d1a045d60879f1971c6e5ca6109b8bbb4dd2492b5a963fa41b"
+    },
+    {
+      "name": "ncnn",
+      "url": "https://codeload.github.com/Tencent/ncnn/tar.gz/b4ba207c18d3103d6df890c0e3a97b469b196b26",
+      "sha256": "b7ca5b58bf65a7069c9473dd2fd6b83a2ae7a12e634464d7a11df3c866160dbf"
+    },
+    {
+      "name": "glslang",
+      "url": "https://codeload.github.com/KhronosGroup/glslang/tar.gz/86ff4bca1ddc7e2262f119c16e7228d0efb67610",
+      "sha256": "cec9ac581a18e4a2bc8709c714644ed486fb2ac34495ad34b4155f9bcf900f74"
+    },
+    {
+      "name": "vulkan-headers",
+      "url": "https://codeload.github.com/KhronosGroup/Vulkan-Headers/tar.gz/v1.3.231",
+      "sha256": "4cb1c0aeb858e1a4955a736b86b0da8511ca8701222e9a252adcf093d40a8d28"
+    }
+  ]
+}

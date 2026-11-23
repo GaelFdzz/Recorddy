@@ -1,6 +1,6 @@
 ---
 name: Algo nuevo o distinto
-about: Una función nueva o un cambio en cómo se comporta Clippy
+about: Una función nueva o un cambio en cómo se comporta Recorddy
 labels: enhancement
 ---
 
@@ -13,7 +13,7 @@ labels: enhancement
 
 ## Propuesta
 
-<!-- Qué hace Clippy después del cambio, incluido lo que NO tiene que hacer. -->
+<!-- Qué hace Recorddy después del cambio, incluido lo que NO tiene que hacer. -->
 
 -
 

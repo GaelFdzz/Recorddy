@@ -1,7 +1,7 @@
 //! Modos de prueba sin ventana (solo con `--features devtools`; no van en el exe publicado).
 //!
 //! - `--test <segundos> <carpeta> [game|desktop|mic|juegos|resolución]`: graba, guarda un clip y sale. Con
-//!   `CLIPPY_TEST_ALIGN16=1`, el encoder falla con tamaños que no son múltiplo de 16 (`--test 8 <carpeta> 766`).
+//!   `RECORDDY_TEST_ALIGN16=1`, el encoder falla con tamaños que no son múltiplo de 16 (`--test 8 <carpeta> 766`).
 //! - `--test-mic`: cuánto audio entrega cada micrófono en 3 s.
 //! - `--test-download`: descarga la versión publicada como el botón "Actualizar".
 //! - `--test-export`, `--test-frame`, `--test-strip`, `--test-covers`: ver `editor::devtools`.
@@ -95,9 +95,9 @@ fn test_mode(args: &[String]) -> i32 {
         let _ = tx.send(e);
     });
     let rec = crate::record::recorder::Recorder::start(cfg, notify);
-    // Con CLIPPY_TEST_MODE="1280x960", a los 2 s el monitor principal pasa a ese modo como lo haría un juego en
+    // Con RECORDDY_TEST_MODE="1280x960", a los 2 s el monitor principal pasa a ese modo como lo haría un juego en
     // pantalla completa (resolución estirada); Windows lo devuelve al guardar el clip o al salir.
-    let mode = std::env::var("CLIPPY_TEST_MODE").ok().and_then(|m| m.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?))));
+    let mode = std::env::var("RECORDDY_TEST_MODE").ok().and_then(|m| m.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?))));
     if let Some(m) = mode {
         std::thread::sleep(Duration::from_secs(2));
         println!("modo {}x{}: {:?}", m.0, m.1, set_mode(Some(m)));

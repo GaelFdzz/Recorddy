@@ -1,4 +1,10 @@
 /target/
+/dist/
+/.vs/
+/.vscode/
+__pycache__/
+*.py[cod]
+.recorddy-export-*/
 *.exe
 *.pdb
 /.claude/launch.json

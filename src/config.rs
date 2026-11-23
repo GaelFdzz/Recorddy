@@ -60,6 +60,9 @@ pub struct Config {
     pub enabled: bool,
     /// Si es true, la única salida activa es la grabación continua.
     pub continuous_mode: bool,
+    /// Campo heredado: no se procesa al grabar. Smooth Motion solo se aplica desde el editor.
+    /// Se conserva el nombre del campo para migrar config.json sin pérdida de ajustes.
+    pub motion_blur: u8,
     pub output_dir: PathBuf,
     pub seconds: u32,
     pub hotkey_vk: u32,
@@ -139,6 +142,7 @@ impl Default for Config {
         Self {
             enabled: true,
             continuous_mode: false,
+            motion_blur: 0,
             output_dir: default_output_dir(),
             seconds: 30,
             hotkey_vk: 0x78, // F9
@@ -198,6 +202,7 @@ impl Config {
     }
 
     pub fn sanitize(&mut self) {
+        self.motion_blur = self.motion_blur.min(3);
         if !matches!(self.fps, 30 | 60 | 120) {
             self.fps = 60;
         }

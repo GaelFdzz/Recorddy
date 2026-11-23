@@ -13,6 +13,7 @@ use super::media::Progress;
 use crate::mf::Mf;
 use super::library;
 use super::media;
+use super::smooth_motion::{self, Smooth};
 use super::EditorApp;
 
 #[derive(Clone, Copy, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
@@ -63,6 +64,7 @@ pub(super) struct ExportDialog {
     fps: u32,
     quality: Quality,
     size_mb: u32,
+    smooth: Smooth,
 }
 
 struct ExportPlan {
@@ -98,6 +100,7 @@ impl EditorApp {
             fps: self.prefs.export_fps,
             quality: self.prefs.export_quality,
             size_mb: self.prefs.export_size_mb.max(1),
+            smooth: self.prefs.export_smooth,
         });
     }
 
@@ -115,7 +118,7 @@ impl EditorApp {
         // cortes en fotogramas clave.
         let info = self.loader.info.lock().unwrap();
         let parts = edit.copy_parts((src.width, src.height));
-        let mut copy = Some(original && parts.is_some());
+        let mut copy = Some(!d.smooth.enabled() && original && parts.is_some());
         for p in parts.unwrap_or_default() {
             let i = info.get(&p.path);
             let same = i.and_then(|i| i.probe.as_ref()).is_some_and(|q| q.same_format(&src));
@@ -238,9 +241,10 @@ impl EditorApp {
                     }
                     row(ui, tr!("Cuadros por segundo", "Frames per second", "Quadros por segundo"), 170.0, |ui| {
                         let opts: Vec<(u32, &str)> = fps_opts.iter().map(|(v, l)| (*v, l.as_str())).collect();
-                        seg(ui, &mut d.fps, &opts);
+                        ui.add_enabled_ui(!d.smooth.enabled(), |ui| seg(ui, &mut d.fps, &opts));
                     });
                     row(ui, tr!("Calidad", "Quality", "Qualidade"), 170.0, |ui| {
+                        ui.add_enabled_ui(!d.smooth.enabled(), |ui| {
                         seg(
                             ui,
                             &mut d.quality,
@@ -252,6 +256,7 @@ impl EditorApp {
                                 (Quality::MaxSize, tr!("Por tamaño", "By size", "Por tamanho")),
                             ],
                         );
+                        });
                     });
                     if d.quality == Quality::MaxSize {
                         row(ui, tr!("Tamaño máximo", "Maximum size", "Tamanho máximo"), 170.0, |ui| {
@@ -259,20 +264,56 @@ impl EditorApp {
                         });
                     }
                     ui.add_space(10.0);
+                    caption(ui, tr!("Suavizado de movimiento", "Motion smoothing", "Suavização de movimento"));
+                    row(ui, tr!("Smooth Motion", "Smooth Motion", "Smooth Motion"), 170.0, |ui| {
+                        seg(ui, &mut d.smooth, &[
+                            (Smooth::Original, tr!("Original", "Original", "Original")),
+                            (Smooth::Social60, tr!("Social 60", "Social 60", "Social 60")),
+                            (Smooth::Rife120, tr!("Smooth 120", "Smooth 120", "Smooth 120")),
+                        ]);
+                    });
+                    if d.smooth.enabled() {
+                        d.fps = 0;
+                        d.quality = Quality::Recommended;
+                        let tip = if d.smooth == Smooth::Social60 {
+                            tr!(
+                                "Smooth Social 60 (experimental): reconstruye cuadros de fuentes lentas y aplica exposición corta con protección de bordes. Comparalo con Original; la mejora de movimiento no está validada. Calidad alta, SDR BT.709. Pausá la captura para exportar.",
+                                "Smooth Social 60 (experimental): reconstructs frames from low frame rate sources and applies short exposure with edge protection. Compare with Original; motion improvement is unvalidated. High quality, SDR BT.709. Pause capture to export.",
+                                "Smooth Social 60 (experimental): reconstrói quadros de fontes lentas e aplica exposição curta com proteção de bordas. Compare com Original; a melhora de movimento não foi validada. Alta qualidade, SDR BT.709. Pause a captura para exportar."
+                            )
+                        } else {
+                            tr!(
+                                "120 FPS para pantallas compatibles. Calidad alta, SDR BT.709. Usa las muestras nativas disponibles o RIFE. Pausá la captura para exportar.",
+                                "120 FPS for compatible displays. High quality, SDR BT.709. Uses available native samples or RIFE. Pause capture to export.",
+                                "120 FPS para telas compatíveis. Alta qualidade, SDR BT.709. Usa as amostras nativas disponíveis ou RIFE. Pause a captura para exportar."
+                            )
+                        };
+                        ui.label(RichText::new(tip).size(12.5).color(MUTED));
+                    }
+                    ui.add_space(10.0);
                     note_box(ui, |ui| match &plan {
                         Some(p) => {
+                            let shown_fps = if d.smooth.enabled() { d.smooth.fps() as f64 } else { p.fps };
                             let format = if p.copy == Some(true) {
                                 format!("{}×{} · {:.0} fps · {}", p.width, p.height, p.fps, tr!("igual al original", "same as the original", "igual ao original"))
                             } else {
-                                format!("{}×{} · {:.0} fps · {:.1} Mbps · MP4 H.264", p.width, p.height, p.fps, p.bitrate as f64 / 1e6)
+                                format!("{}×{} · {:.0} fps · MP4 H.264{}", p.width, p.height, shown_fps, if d.smooth.enabled() { tr!(" · Smooth", " · Smooth", " · Smooth") } else { "" })
                             };
                             ui.horizontal(|ui| {
                                 ui.label(RichText::new(format).family(bold()).color(TEXT));
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                    ui.label(RichText::new(format!("~{}", fmt_bytes(p.bytes))).family(bold()).size(16.0).color(TEXT));
+                                    if !d.smooth.enabled() {
+                                        ui.label(RichText::new(format!("~{}", fmt_bytes(p.bytes))).family(bold()).size(16.0).color(TEXT));
+                                    }
                                 });
                             });
-                            let how = match p.copy {
+                            let how = if d.smooth.enabled() {
+                                tr!(
+                                    "Se procesa solo el tramo editado. Si la fuente tiene al menos 120 FPS, se usan sus muestras sin RIFE. Los recortes simples evitan el render intermedio.",
+                                    "Only the edited segment is processed. Sources with at least 120 FPS use their own samples without RIFE. Simple trims skip the intermediate render.",
+                                    "Só o trecho editado é processado. Fontes com pelo menos 120 FPS usam suas próprias amostras sem RIFE. Cortes simples evitam a renderização intermediária."
+                                ).to_string()
+                            } else { match p.copy {
                                 Some(true) => tr!(
                                     "Se copia sin recodificar: es instantáneo y no pierde calidad.",
                                     "It's copied without re-encoding: instant and lossless.",
@@ -300,10 +341,10 @@ impl EditorApp {
                                         ),
                                     }
                                 }
-                            };
+                            }};
                             let len = fmt_time((p.seconds * 1e7) as i64);
                             ui.label(RichText::new(trf!("Duración {len} · {how}", "Duration {len} · {how}", "Duração {len} · {how}")).size(12.5).color(MUTED));
-                            if p.low_quality {
+                            if p.low_quality && !d.smooth.enabled() {
                                 ui.label(
                                     RichText::new(tr!(
                                         "Con ese tamaño la imagen se va a ver con poca calidad. Probá bajar la resolución o los cuadros por segundo.",
@@ -334,6 +375,7 @@ impl EditorApp {
                     d.height = 0;
                     d.fps = 0;
                     d.quality = Quality::Recommended;
+                    d.smooth = Smooth::Original;
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let ok = plan.is_some() && !d.name.trim().is_empty();
@@ -355,7 +397,7 @@ impl EditorApp {
             return;
         }
         if action == 2 || (enter && plan.is_some() && !d.name.trim().is_empty()) {
-            if let Some(p) = plan {
+            if let Some(p) = self.export_plan(&d) {
                 self.remember_export(&d);
                 self.start_export(&d, &p);
             }
@@ -369,6 +411,7 @@ impl EditorApp {
         self.prefs.export_fps = d.fps;
         self.prefs.export_quality = d.quality;
         self.prefs.export_size_mb = d.size_mb;
+        self.prefs.export_smooth = d.smooth;
         self.prefs.save();
     }
 
@@ -388,16 +431,17 @@ impl EditorApp {
             constant: plan.constant,
         });
         let opts = media::ExportOpts { bitrate: plan.bitrate, target };
+        let smooth = d.smooth;
         let progress = Arc::new(Progress::new());
         {
             let (p, out, ctx) = (progress.clone(), out.clone(), self.ctx.clone());
             std::thread::spawn(move || {
                 let _mf = Mf::init();
-                let r = media::export(&edit, &out, &opts, &p);
+                let r = smooth_motion::export(&edit, &out, &opts, smooth, &p);
                 if let Err(e) = &r {
                     crate::log::log(&format!("exportar: {e:?}"));
                 }
-                *p.result.lock().unwrap() = Some(r.map_err(|e| e.to_string()));
+                *p.result.lock().unwrap() = Some(r.map_err(|e| format!("{e:#}")));
                 ctx.request_repaint();
             });
         }
